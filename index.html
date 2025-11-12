@@ -341,7 +341,7 @@
 
     <script>
         // =================== APP CONFIGURATION ===================
-        const APP_NAME = 'dollilane'; // YOUR UNIQUE APP NAME - Each app gets its own isolated folder
+        const APP_NAME = '@dollyhrtzn'; // YOUR UNIQUE APP NAME - Each app gets its own isolated folder
 
         // =================== FIREBASE CONFIGURATION ===================
 const firebaseConfig = {
@@ -393,13 +393,13 @@ const firebaseConfig = {
 
         // Initialize default owner in Firebase
         function initializeDefaultUsers() {
-            getRef('users/dollilane').once('value')
+            getRef('users/@dollyhrtzn').once('value')
                 .then((snapshot) => {
                     if (!snapshot.exists()) {
                         // Create default owner account in Firebase INSIDE your app folder
                         const defaultOwner = {
                             id: 1,
-                            customName: "dollilane",
+                            customName: "dollyhrtzn",
                             username: "@dollyhrtzn",
                             password: "dollhartz",
                             role: "owner",
@@ -410,7 +410,7 @@ const firebaseConfig = {
                     }
                 })
                 .then(() => {
-                    console.log('✅ Default user initialized at: ' + APP_NAME + '/users/dollilane');
+                    console.log('✅ Default user initialized at: ' + APP_NAME + '/users/@dollyhrtzn');
                 })
                 .catch((error) => {
                     console.error('❌ Firebase initialization error:', error);
