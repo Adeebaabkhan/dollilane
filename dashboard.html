@@ -1933,7 +1933,16 @@ body.dark-mode .profile-select-btn {
                         </select>
                     </div>
                 </div>
+<div class="form-group">
+  <label>Buyer Username</label>
+  <input type="text" id="buyerUsernameInput" placeholder="Enter buyer's username">
+</div>
 
+<!-- Sold Account Email -->
+<div class="form-group">
+  <label>Sold Account Email</label>
+  <input type="email" id="accountEmailInput" placeholder="Enter sold account's email">
+</div>
                 <!-- Warranty -->
                 <div class="form-group">
                     <label>🛡️ Warranty Type</label>
@@ -4360,6 +4369,8 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
                     profileName: profileName,
                     profileType: profileType.value,
                     soldBy: soldBy,
+                    buyerUsername: document.getElementById('buyerUsernameInput').value,
+                    accountEmail: document.getElementById('accountEmailInput').value,
                     buyPrice: product.buyPrice,
                     sellPrice: product.sellPrice,
                     price: price,
@@ -4930,8 +4941,7 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
                         <td>${profileNumber}</td>
                         <td>${slotNumber}</td>
                         <td>${profileName}</td>
-                        <td>${soldBy}</td>
-                        <td><span class="warranty-badge ${warrantyClass}">${sale.warranty}</span></td>
+                        <td>Sold by @${soldBy}${sale.buyerUsername ? " to @" + sale.buyerUsername : ""}${sale.accountEmail ? " (Email: " + sale.accountEmail + ")" : ""}</td>                        <td><span class="warranty-badge ${warrantyClass}">${sale.warranty}</span></td>
                         <td><span class="account-type-badge ${accountClass}">${sale.accountType}</span></td>
                         <td>${sale.quantity}</td>
                         <td class="amount-cell">₱${sale.price.toFixed(2)}</td>
