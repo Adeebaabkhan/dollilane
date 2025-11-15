@@ -4668,42 +4668,46 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
                 });
         }
 
-// =================== DELETE SALE ===================
 function deleteSale(id) {
     if (!confirm('Delete this sale?')) return;
-    
     const sale = sales.find(s => s.id === id);
     if (!sale) {
         showToast('❌ Sale not found', 'error');
         return;
     }
 
-    // Build userKey: add "@" if missing, but don't double it!
-    let userKey = sale.userName;
-    if (!userKey.startsWith('@')) {
-        userKey = '@' + userKey;
+    // Build all possible userKeys
+    let possibleUserKeys = [];
+    if (sale.userName) {
+        possibleUserKeys.push(sale.userName);
+        if (!sale.userName.startsWith('@')) {
+            possibleUserKeys.push('@' + sale.userName);
+        }
     }
-    
-    console.log('🗑️ Deleting sale:', sale);
-    console.log('🔑 Using userKey:', userKey);
-    console.log('📍 Firebase path: sales/' + userKey + '/' + id);
+    if (sale.userId) {
+        possibleUserKeys.push(sale.userId.toString());
+    }
 
-    getRef('sales/' + userKey + '/' + id).remove()
-        .then(() => {
+    // Try all keys
+    function tryDelete(keys) {
+        if (keys.length === 0) {
+            showToast('❌ Could not delete sale; no matching Firebase path found', 'error');
+            return;
+        }
+        const key = keys.shift();
+        console.log('Trying delete path:', 'sales/' + key + '/' + id);
+        getRef('sales/' + key + '/' + id).remove().then(() => {
             showToast('✅ Sale deleted successfully!', 'success');
-            autoCalculatePayouts();
-            // Remove sale from array and refresh UI
             const index = sales.findIndex(s => s.id === id);
-            if (index > -1) {
-                sales.splice(index, 1);
-            }
+            if (index > -1) sales.splice(index, 1);
             renderSalesTable();
             calculateStats();
-        })
-        .catch((error) => {
-            console.error('❌ Delete error:', error);
-            showToast('❌ Error: ' + error.message, 'error');
+        }).catch((error) => {
+            console.error('❌ Delete error on path', key, error);
+            tryDelete(keys); // Try next possible key
         });
+    }
+    tryDelete(possibleUserKeys);
 }
 
         // =================== TOGGLE SOLD STATUS ===================
