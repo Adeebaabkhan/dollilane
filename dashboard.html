@@ -4682,6 +4682,7 @@ function deleteSale(id) {
     }
     
     console.log('📋 Sale found:', sale);
+    console.log('👤 Current user:', currentSession);
     
     // =================== SECURITY CHECK ===================
     // Check if current user has permission to delete this sale
@@ -4696,11 +4697,18 @@ function deleteSale(id) {
         const isOwnSale = (
             sale.userId === currentSession.id || 
             sale.userName === currentSession.username ||
-            sale.userName === currentSession.customName
+            sale.userName === currentSession.customName ||
+            (sale.userName && sale.userName.includes(currentSession.username)) ||
+            (sale.userName && sale.userName.includes(currentSession.customName))
         );
         
         if (!isOwnSale) {
             showToast('❌ Access denied: You can only delete your own sales', 'error');
+            console.log('❌ Admin tried to delete other user sale:', {
+                saleUser: sale.userName,
+                currentUser: currentSession.username,
+                currentCustomName: currentSession.customName
+            });
             return;
         }
         console.log('✅ Admin permission granted - deleting own sale');
@@ -4765,15 +4773,15 @@ function deleteSale(id) {
         });
 }
 
-// =================== SECURE ALTERNATIVE DELETE (Owner Only) ===================
-function ownerForceDelete(saleId) {
+// =================== OWNER OVERRIDE FUNCTION ===================
+function ownerDeleteSale(saleId) {
     // Only owner can use this function
     if (currentSession.role !== 'owner') {
         showToast('❌ Owner access required', 'error');
         return;
     }
     
-    if (!confirm('OWNER: Force delete this sale from any user?')) return;
+    if (!confirm('OWNER OVERRIDE: Delete this sale?')) return;
     
     const sale = sales.find(s => s.id == saleId);
     if (!sale) {
@@ -4781,33 +4789,26 @@ function ownerForceDelete(saleId) {
         return;
     }
     
-    console.log('💥 OWNER force deleting:', sale);
+    console.log('👑 OWNER override deleting:', sale);
     
-    // Try multiple possible paths
-    const pathsToTry = [];
-    
-    if (sale.userName) pathsToTry.push(`sales/${sale.userName}/${saleId}`);
-    if (sale.userId) pathsToTry.push(`sales/${sale.userId.toString()}/${saleId}`);
-    
-    // Also try cleaned versions
-    if (sale.userName) {
-        const cleaned = sale.userName.replace(/[.#$/[\]]/g, '_');
-        pathsToTry.push(`sales/${cleaned}/${saleId}`);
+    // Determine the correct path
+    let userKey = sale.userName || sale.userId?.toString();
+    if (!userKey) {
+        showToast('❌ Cannot determine sale owner', 'error');
+        return;
     }
     
-    console.log('🔍 Attempting paths:', pathsToTry);
+    const cleanUserKey = userKey.replace(/[.#$/[\]]/g, '_');
+    const firebasePath = `sales/${cleanUserKey}/${saleId}`;
+    
+    console.log('📍 Owner deleting from:', firebasePath);
     
     showSyncingIndicator();
     
-    // Try all paths - first one that works wins
-    const deleteAttempts = pathsToTry.map(path => 
-        getRef(path).remove().then(() => path)
-    );
-    
-    Promise.any(deleteAttempts)
-        .then((successfulPath) => {
-            console.log('✅ Owner delete successful via:', successfulPath);
-            showToast('✅ Owner: Sale force deleted!', 'success');
+    getRef(firebasePath).remove()
+        .then(() => {
+            console.log('✅ Owner delete successful');
+            showToast('✅ Owner: Sale deleted!', 'success');
             
             // Update local data and UI
             sales = sales.filter(s => s.id != saleId);
@@ -4816,8 +4817,8 @@ function ownerForceDelete(saleId) {
             autoCalculatePayouts();
         })
         .catch((error) => {
-            console.error('❌ All owner delete attempts failed:', error);
-            showToast('❌ Owner: Delete failed on all paths', 'error');
+            console.error('❌ Owner delete failed:', error);
+            showToast('❌ Owner: Delete failed - ' + error.message, 'error');
         });
 }
 
