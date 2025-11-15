@@ -4668,54 +4668,156 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
                 });
         }
 
-        // =================== DELETE SALE ===================
 // =================== DELETE SALE ===================
 function deleteSale(id) {
-    if (!confirm('Delete this sale?')) return;
+    if (!confirm('Are you sure you want to delete this sale?')) return;
     
-    console.log('🗑️ Deleting sale ID:', id);
+    console.log('🗑️ Attempting to delete sale ID:', id);
     
-    // Method 1: Try current user's sales first
-    const userKey = currentSession.username.replace(/[.#$/[\]]/g, '_');
+    // Find the sale in our local data first
+    const sale = sales.find(s => s.id == id);
+    if (!sale) {
+        showToast('❌ Sale not found', 'error');
+        return;
+    }
     
-    getRef('sales/' + userKey + '/' + id).remove()
+    console.log('📋 Sale found:', sale);
+    
+    // =================== SECURITY CHECK ===================
+    // Check if current user has permission to delete this sale
+    
+    // Owner can delete ANY sale
+    if (currentSession.role === 'owner') {
+        console.log('✅ Owner permission granted - can delete any sale');
+    }
+    // Admin can only delete THEIR OWN sales
+    else if (currentSession.role === 'admin') {
+        // Check if this sale belongs to the current admin
+        const isOwnSale = (
+            sale.userId === currentSession.id || 
+            sale.userName === currentSession.username ||
+            sale.userName === currentSession.customName
+        );
+        
+        if (!isOwnSale) {
+            showToast('❌ Access denied: You can only delete your own sales', 'error');
+            return;
+        }
+        console.log('✅ Admin permission granted - deleting own sale');
+    }
+    // Unknown role - deny access
+    else {
+        showToast('❌ Access denied: Unknown user role', 'error');
+        return;
+    }
+    
+    // =================== DETERMINE FIREBASE PATH ===================
+    let userKey = null;
+    
+    // Use the sale's original userKey (don't change it)
+    if (sale.userName) {
+        userKey = sale.userName; // Keep original @username format
+    } 
+    else if (sale.userId) {
+        userKey = sale.userId.toString();
+    }
+    // Fallback to current user
+    else if (currentSession.username) {
+        userKey = currentSession.username;
+    }
+    
+    if (!userKey) {
+        showToast('❌ Cannot determine sale location', 'error');
+        return;
+    }
+    
+    // Clean the userKey for Firebase (only replace problematic characters, keep @)
+    const cleanUserKey = userKey.replace(/[.#$/[\]]/g, '_');
+    console.log('🔧 Cleaned userKey for Firebase:', cleanUserKey);
+    
+    const firebasePath = `sales/${cleanUserKey}/${id}`;
+    console.log('📍 Firebase path:', firebasePath);
+    
+    showSyncingIndicator();
+    
+    // Attempt deletion
+    getRef(firebasePath).remove()
         .then(() => {
-            showToast('🗑️ Sale deleted successfully', 'success');
-            // Refresh the table
-            setTimeout(() => {
-                renderSalesTable();
-                calculateStats();
-            }, 500);
+            console.log('✅ Successfully deleted from Firebase');
+            showToast('✅ Sale deleted successfully!', 'success');
+            
+            // Remove from local array immediately
+            const saleIndex = sales.findIndex(s => s.id == id);
+            if (saleIndex > -1) {
+                sales.splice(saleIndex, 1);
+            }
+            
+            // Update UI
+            renderSalesTable();
+            calculateStats();
+            autoCalculatePayouts();
+            
+            console.log('🔄 UI updated after deletion');
         })
         .catch((error) => {
-            console.log('❌ First method failed, trying alternative...');
+            console.error('❌ Delete failed:', error);
+            showToast('❌ Failed to delete sale: ' + error.message, 'error');
+        });
+}
+
+// =================== SECURE ALTERNATIVE DELETE (Owner Only) ===================
+function ownerForceDelete(saleId) {
+    // Only owner can use this function
+    if (currentSession.role !== 'owner') {
+        showToast('❌ Owner access required', 'error');
+        return;
+    }
+    
+    if (!confirm('OWNER: Force delete this sale from any user?')) return;
+    
+    const sale = sales.find(s => s.id == saleId);
+    if (!sale) {
+        showToast('❌ Sale not found', 'error');
+        return;
+    }
+    
+    console.log('💥 OWNER force deleting:', sale);
+    
+    // Try multiple possible paths
+    const pathsToTry = [];
+    
+    if (sale.userName) pathsToTry.push(`sales/${sale.userName}/${saleId}`);
+    if (sale.userId) pathsToTry.push(`sales/${sale.userId.toString()}/${saleId}`);
+    
+    // Also try cleaned versions
+    if (sale.userName) {
+        const cleaned = sale.userName.replace(/[.#$/[\]]/g, '_');
+        pathsToTry.push(`sales/${cleaned}/${saleId}`);
+    }
+    
+    console.log('🔍 Attempting paths:', pathsToTry);
+    
+    showSyncingIndicator();
+    
+    // Try all paths - first one that works wins
+    const deleteAttempts = pathsToTry.map(path => 
+        getRef(path).remove().then(() => path)
+    );
+    
+    Promise.any(deleteAttempts)
+        .then((successfulPath) => {
+            console.log('✅ Owner delete successful via:', successfulPath);
+            showToast('✅ Owner: Sale force deleted!', 'success');
             
-            // Method 2: Search through all sales
-            getRef('sales').once('value').then((snapshot) => {
-                const salesData = snapshot.val() || {};
-                let found = false;
-                
-                // Search all users
-                for (const userKey in salesData) {
-                    if (salesData[userKey] && salesData[userKey][id]) {
-                        console.log('✅ Found sale under user:', userKey);
-                        return getRef('sales/' + userKey + '/' + id).remove();
-                    }
-                }
-                
-                throw new Error('Sale not found in any user folder');
-            })
-            .then(() => {
-                showToast('🗑️ Sale deleted successfully', 'success');
-                setTimeout(() => {
-                    renderSalesTable();
-                    calculateStats();
-                }, 500);
-            })
-            .catch((error) => {
-                console.error('❌ Delete error:', error);
-                showToast('❌ Error: Sale not found or already deleted', 'error');
-            });
+            // Update local data and UI
+            sales = sales.filter(s => s.id != saleId);
+            renderSalesTable();
+            calculateStats();
+            autoCalculatePayouts();
+        })
+        .catch((error) => {
+            console.error('❌ All owner delete attempts failed:', error);
+            showToast('❌ Owner: Delete failed on all paths', 'error');
         });
 }
 
