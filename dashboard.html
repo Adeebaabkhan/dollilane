@@ -4669,22 +4669,53 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
         }
 
         // =================== DELETE SALE ===================
+// =================== DELETE SALE ===================
 function deleteSale(id) {
     if (!confirm('Delete this sale?')) return;
     
-    const sale = sales.find(s => s.id === id);
-    if (!sale) return;
+    console.log('🗑️ Deleting sale ID:', id);
     
-    // ✅ FIX: Use the correct field - either userId or username
-    const userKey = sale.userId ? sale.userId.toString() : sale.userName.replace(/[.#$/[\]]/g, '_');
+    // Method 1: Try current user's sales first
+    const userKey = currentSession.username.replace(/[.#$/[\]]/g, '_');
     
     getRef('sales/' + userKey + '/' + id).remove()
         .then(() => {
-            showToast('🗑️ Sale deleted', 'info');
-            autoCalculatePayouts();
+            showToast('🗑️ Sale deleted successfully', 'success');
+            // Refresh the table
+            setTimeout(() => {
+                renderSalesTable();
+                calculateStats();
+            }, 500);
         })
         .catch((error) => {
-            showToast('❌ Error: ' + error.message, 'error');
+            console.log('❌ First method failed, trying alternative...');
+            
+            // Method 2: Search through all sales
+            getRef('sales').once('value').then((snapshot) => {
+                const salesData = snapshot.val() || {};
+                let found = false;
+                
+                // Search all users
+                for (const userKey in salesData) {
+                    if (salesData[userKey] && salesData[userKey][id]) {
+                        console.log('✅ Found sale under user:', userKey);
+                        return getRef('sales/' + userKey + '/' + id).remove();
+                    }
+                }
+                
+                throw new Error('Sale not found in any user folder');
+            })
+            .then(() => {
+                showToast('🗑️ Sale deleted successfully', 'success');
+                setTimeout(() => {
+                    renderSalesTable();
+                    calculateStats();
+                }, 500);
+            })
+            .catch((error) => {
+                console.error('❌ Delete error:', error);
+                showToast('❌ Error: Sale not found or already deleted', 'error');
+            });
         });
 }
 
