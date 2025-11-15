@@ -4671,17 +4671,24 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
 
 function deleteSale(id) {
     if (!confirm('Delete this sale?')) return;
-    
+
     const sale = sales.find(s => s.id === id);
     if (!sale) return;
-    
-    // FIX: Handle @ symbols and other special characters
-    const userKey = (sale.soldBy || currentSession.username)
-        .replace(/[.#$@[\]]/g, '_')  // Added @ to the replacement
-        .replace(/^@/, 'at_');       // Special handling for leading @
-    
+
+    let userKey = (sale.soldBy || currentSession.username);
+
+    // ✔ Handle ANY number of leading @ signs
+    // @name      → at_name
+    // @@name     → at_at_name
+    // @@@name    → at_at_at_name
+    // name       → name
+    userKey = userKey.replace(/^@+/, match => 'at_'.repeat(match.length));
+
+    // ✔ Replace Firebase forbidden characters (DO NOT replace @ anymore)
+    userKey = userKey.replace(/[.#$\[\]\/]/g, '_');
+
     console.log('Deleting sale from path:', 'sales/' + userKey + '/' + id);
-    
+
     getRef('sales/' + userKey + '/' + id).remove()
         .then(() => {
             showToast('🗑️ Sale deleted', 'info');
