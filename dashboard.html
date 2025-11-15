@@ -2111,6 +2111,8 @@ body.dark-mode .profile-select-btn {
                             <th>Date</th>
                             <th id="adminColumn">Admin</th>
                             <th>Product</th>
+                            <th>Buyer Username</th>
+                            <th>Account Email</th>
                             <th>Account</th>
                             <th>Profile</th>
                             <th>Slot</th>
@@ -2127,7 +2129,7 @@ body.dark-mode .profile-select-btn {
                     </thead>
                     <tbody id="salesTableBody">
                         <tr>
-                            <td colspan="10">
+                            <td colspan="17">
                                 <div class="empty-state">
                                     <div class="empty-icon">📦</div>
                                     <h3>No sales yet</h3>
@@ -4302,7 +4304,26 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
                     showToast('⚠️ Please select a profile number', 'error');
                     return;
                 }
+                                // Validate buyer username and account email
+                const buyerUsername = document.getElementById('buyerUsernameInput').value.trim();
+                const accountEmail = document.getElementById('accountEmailInput').value.trim();
                 
+                if (!buyerUsername) {
+                    showToast('⚠️ Please enter buyer username', 'error');
+                    return;
+                }
+                
+                if (!accountEmail) {
+                    showToast('⚠️ Please enter account email', 'error');
+                    return;
+                }
+                
+                // Basic email validation
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(accountEmail)) {
+                    showToast('⚠️ Please enter a valid email address', 'error');
+                    return;
+                }
                 if (!profileType) {
                     showToast('⚠️ Please select profile type (Solo or Shared)', 'error');
                     return;
@@ -4362,7 +4383,6 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
                     userName: soldByUser ? soldByUser.customName : currentSession.customName,
                     productId: productId,
                     productName: product.name,
-                    product: product.name,
                     accountId: accountId,
                     profileNumber: parseInt(profileNumber),
                     slotNumber: slotNumber,
@@ -4390,6 +4410,8 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
                 getRef('sales/' + userKey + '/' + newSale.id).set(newSale)
                     .then(() => {
                         document.getElementById('addSaleForm').reset();
+                        document.getElementById('buyerUsernameInput').value = '';
+                        document.getElementById('accountEmailInput').value = '';
                         document.getElementById('productDetailsCard').style.display = 'none';
                         document.getElementById('totalEarningsCard').style.display = 'none';
                         document.getElementById('profileTrackingFields').style.display = 'none';
@@ -4415,6 +4437,26 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
                     showToast('⚠️ Please select account type (Solo or Shared)', 'error');
                     return;
                 }
+                                // Validate buyer username and account email for regular sales
+                const buyerUsername = document.getElementById('buyerUsernameInput').value.trim();
+                const accountEmail = document.getElementById('accountEmailInput').value.trim();
+                
+                if (!buyerUsername) {
+                    showToast('⚠️ Please enter buyer username', 'error');
+                    return;
+                }
+                
+                if (!accountEmail) {
+                    showToast('⚠️ Please enter account email', 'error');
+                    return;
+                }
+                
+                // Basic email validation
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(accountEmail)) {
+                    showToast('⚠️ Please enter a valid email address', 'error');
+                    return;
+                }
                 
                 const quantity = parseInt(document.getElementById('productQuantity').value);
                 const price = parseFloat(document.getElementById('productPrice').textContent.replace('₱', ''));
@@ -4435,6 +4477,8 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
                     userName: currentSession.customName,
                     productId: productId,
                     productName: product.name,
+                    buyerUsername: document.getElementById('buyerUsernameInput').value,
+                    accountEmail: document.getElementById('accountEmailInput').value,
                     warranty: warrantyType.value,
                     accountType: accountType.value,
                     quantity: quantity,
@@ -4453,6 +4497,8 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
                 getRef('sales/' + userKey + '/' + newSale.id).set(newSale)
                     .then(() => {
                         document.getElementById('addSaleForm').reset();
+                        document.getElementById('buyerUsernameInput').value = '';
+                        document.getElementById('accountEmailInput').value = '';
                         document.getElementById('productDetailsCard').style.display = 'none';
                         document.getElementById('totalEarningsCard').style.display = 'none';
                         showToast('✅ Sale added successfully!', 'success');
@@ -4670,12 +4716,13 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
             document.querySelector(`input[name="accountType"][value="${sale.accountType}"]`).checked = true;
             document.getElementById('productQuantity').value = sale.quantity;
             document.getElementById('productSoldStatus').value = sale.sold ? 'yes' : 'no';
+            document.getElementById('buyerUsernameInput').value = sale.buyerUsername || '';
+            document.getElementById('accountEmailInput').value = sale.accountEmail || '';
             
             deleteSale(id);
             document.getElementById('addSaleForm').scrollIntoView({ behavior: 'smooth' });
             showToast('📝 Edit mode - Update and save', 'info');
         }
-
         // =================== USER MANAGEMENT ===================
         document.getElementById('addUserForm').addEventListener('submit', function(e) {
             e.preventDefault();
@@ -4894,7 +4941,9 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
                     s.productName.toLowerCase().includes(searchTerm) ||
                     s.userName.toLowerCase().includes(searchTerm) ||
                     s.warranty.toLowerCase().includes(searchTerm) ||
-                    s.accountType.toLowerCase().includes(searchTerm)
+                    s.accountType.toLowerCase().includes(searchTerm) ||
+                    (s.buyerUsername && s.buyerUsername.toLowerCase().includes(searchTerm)) ||
+                    (s.accountEmail && s.accountEmail.toLowerCase().includes(searchTerm))
                 );
             }
             
@@ -4908,7 +4957,7 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
             if (filtered.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="15">
+                        <td colspan="17">
                             <div class="empty-state">
                                 <div class="empty-icon">📦</div>
                                 <h3>No sales found</h3>
@@ -4937,11 +4986,14 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
                         <td>${sale.date}</td>
                         ${currentSession.role === 'owner' ? `<td>${sale.userName}</td>` : ''}
                         <td>${sale.productName}</td>
+                        <td>${sale.buyerUsername || '-'}</td>
+                        <td>${sale.accountEmail || '-'}</td>
                         <td>${accountId}</td>
                         <td>${profileNumber}</td>
                         <td>${slotNumber}</td>
                         <td>${profileName}</td>
-                        <td>Sold by @${soldBy}${sale.buyerUsername ? " to @" + sale.buyerUsername : ""}${sale.accountEmail ? " (Email: " + sale.accountEmail + ")" : ""}</td>                        <td><span class="warranty-badge ${warrantyClass}">${sale.warranty}</span></td>
+                        <td>${soldBy}</td>
+                        <td><span class="warranty-badge ${warrantyClass}">${sale.warranty}</span></td>
                         <td><span class="account-type-badge ${accountClass}">${sale.accountType}</span></td>
                         <td>${sale.quantity}</td>
                         <td class="amount-cell">₱${sale.price.toFixed(2)}</td>
@@ -5246,10 +5298,10 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
         function exportToCSV() {
             const filtered = getFilteredSales();
             
-            let csv = 'Date,Admin,Product,Warranty,Type,Qty,Price,Total,Sold\n';
+            let csv = 'Date,Admin,Product,Buyer Username,Account Email,Warranty,Type,Qty,Price,Total,Sold\n';
             
             filtered.forEach(sale => {
-                csv += `${sale.date},${sale.userName},${sale.productName},${sale.warranty},${sale.accountType},${sale.quantity},${sale.price},${sale.totalPrice},${sale.sold ? 'Yes' : 'No'}\n`;
+                csv += `${sale.date},${sale.userName},${sale.productName},${sale.buyerUsername || ''},${sale.accountEmail || ''},${sale.warranty},${sale.accountType},${sale.quantity},${sale.price},${sale.totalPrice},${sale.sold ? 'Yes' : 'No'}\n`;
             });
             
             const blob = new Blob([csv], { type: 'text/csv' });
@@ -5487,7 +5539,19 @@ document.getElementById('addSaleForm').addEventListener('submit', function(e) {
             showToast('⚠️ Please select sale type', 'error');
             return;
         }
+                // Validate buyer username and account email for subscription products
+        const buyerUsername = document.getElementById('buyerUsernameInput').value.trim();
+        const accountEmail = document.getElementById('accountEmailInput').value.trim();
         
+        if (!buyerUsername) {
+            showToast('⚠️ Please enter buyer username', 'error');
+            return;
+        }
+        
+        if (!accountEmail) {
+            showToast('⚠️ Please enter account email', 'error');
+            return;
+        }
         if (saleType === 'profile') {
             if (!selectedProfile) {
                 showToast('⚠️ Please select a profile number', 'error');
@@ -5510,12 +5574,14 @@ document.getElementById('addSaleForm').addEventListener('submit', function(e) {
                     const newSale = {
                         id: Date.now(),
                         productName: subProduct.name + ` (Profile ${selectedProfile})`,
+                        buyerUsername: document.getElementById('buyerUsernameInput').value,
+                        accountEmail: document.getElementById('accountEmailInput').value,
                         warrantyType: 'N/A',
                         accountType: 'Profile',
                         quantity: 1,
-price: subProduct.soloPrice,
+                        price: subProduct.soloPrice,
                         commission: 0,
-totalPrice: subProduct.soloPrice,
+                        totalPrice: subProduct.soloPrice,
                         totalCommission: 0,
                         sold: true,
                         date: new Date().toISOString().split('T')[0],
@@ -5527,6 +5593,8 @@ totalPrice: subProduct.soloPrice,
                 })
                 .then(() => {
                     document.getElementById('addSaleForm').reset();
+                    document.getElementById('buyerUsernameInput').value = '';
+                    document.getElementById('accountEmailInput').value = '';
                     document.getElementById('saleTypeSelection').classList.remove('show');
                     selectedProfile = null;
                     showToast('🎬 Profile sale added!', 'success');
@@ -5548,12 +5616,14 @@ totalPrice: subProduct.soloPrice,
                     const newSale = {
                         id: Date.now(),
                         productName: subProduct.name + ' (Full Account)',
+                        buyerUsername: document.getElementById('buyerUsernameInput').value,
+                        accountEmail: document.getElementById('accountEmailInput').value,
                         warrantyType: 'N/A',
                         accountType: 'Full',
                         quantity: 1,
-price: subProduct.sharedPrice,
+                        price: subProduct.sharedPrice,
                         commission: 0,
-totalPrice: subProduct.sharedPrice,
+                        totalPrice: subProduct.sharedPrice,
                         totalCommission: 0,
                         sold: true,
                         date: new Date().toISOString().split('T')[0],
@@ -5613,151 +5683,179 @@ totalPrice: subProduct.sharedPrice,
             });
     }
 });
-        // =================== COMMISSION BRACKET FUNCTIONS ===================
-        
-        // Load commission brackets
-        function loadCommissionBrackets() {
-            getRef('settings/' + currentUsername + '/commissionBrackets').on('value', (snapshot) => {
-                if (snapshot.exists()) {
-                    commissionBrackets = snapshot.val();
-                    // Convert object to array and sort by minProfit
-                    if (!Array.isArray(commissionBrackets)) {
-                        commissionBrackets = Object.values(commissionBrackets);
-                    }
-                    commissionBrackets.sort((a, b) => a.minProfit - b.minProfit);
-                } else {
-                    // Set default brackets if none exist
-                    commissionBrackets = [
-                        { id: 1, minProfit: 0, maxProfit: 299.99, rate: 10 },
-                        { id: 2, minProfit: 300, maxProfit: 599.99, rate: 15 },
-                        { id: 3, minProfit: 600, maxProfit: 999.99, rate: 20 },
-                        { id: 4, minProfit: 1000, maxProfit: null, rate: 25 }
-                    ];
-                    // Save defaults
-                    if (currentSession.role === 'owner') {
-                        saveCommissionBrackets();
-                    }
-                }
-                renderCommissionBrackets();
-            });
-        }
-        
-        // Calculate commission rate based on profit and brackets
-        function getCommissionRateForProfit(profit, userId = null) {
-            // Determine which user's commission mode to check
-            const user = userId ? users.find(u => u.id === userId) : currentSession;
-            
-            // If user has flat rate commission mode, use profitPercent
-            if (user && user.commissionMode === 'flatRate') {
-                return user.profitPercent || 20;
+// =================== COMMISSION BRACKET FUNCTIONS ===================
+
+// Load commission brackets
+function loadCommissionBrackets() {
+    getRef('settings/' + currentUsername + '/commissionBrackets').on('value', (snapshot) => {
+        if (snapshot.exists()) {
+            commissionBrackets = snapshot.val();
+            // Convert object to array and sort by minProfit
+            if (!Array.isArray(commissionBrackets)) {
+                commissionBrackets = Object.values(commissionBrackets);
             }
-            
-            // Otherwise use bracket-based system
-            // If brackets system is disabled or empty, use admin's default profitPercent
-            if (!commissionBrackets || commissionBrackets.length === 0) {
-                return user ? (user.profitPercent || 25) : 25;
-            }
-            
-            // Find applicable bracket
-            for (let bracket of commissionBrackets) {
-                const min = bracket.minProfit || 0;
-                const max = bracket.maxProfit;
-                
-                if (max === null || max === undefined) {
-                    // This is the "and above" bracket
-                    if (profit >= min) {
-                        return bracket.rate;
-                    }
-                } else {
-                    // Standard bracket with min and max
-                    if (profit >= min && profit <= max) {
-                        return bracket.rate;
-                    }
-                }
-            }
-            
-            // Fallback to default if no bracket matches
-            return user ? (user.profitPercent || 25) : 25;
-        }
-        
-        // Render commission brackets list
-        function renderCommissionBrackets() {
-            const list = document.getElementById('commissionBracketsList');
-            if (!list) return;
-            
-            if (commissionBrackets.length === 0) {
-                list.innerHTML = '<p style="color: var(--text-color); opacity: 0.6;">No brackets configured yet</p>';
-                return;
-            }
-            
-            list.innerHTML = commissionBrackets.map(bracket => {
-                const maxDisplay = bracket.maxProfit !== null && bracket.maxProfit !== undefined 
-                    ? `₱${bracket.maxProfit.toFixed(2)}` 
-                    : 'and above';
-                return `
-                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background: var(--light); border-radius: 10px; margin-bottom: 10px;">
-                        <div>
-                            <strong>₱${bracket.minProfit.toFixed(2)} - ${maxDisplay}</strong>
-                            <span style="margin-left: 15px; color: var(--primary); font-weight: 600;">
-                                ${bracket.rate}% commission
-                            </span>
-                        </div>
-                        <button class="action-btn delete-btn" onclick="deleteBracket(${bracket.id})" ${currentSession.role !== 'owner' ? 'disabled' : ''}>
-                            🗑️
-                        </button>
-                    </div>
-                `;
-            }).join('');
-        }
-        
-        // Open bracket modal
-        function openAddBracketModal() {
-            if (currentSession.role !== 'owner') {
-                showToast('❌ Only owner can configure brackets', 'error');
-                return;
-            }
-            document.getElementById('commissionBracketModal').classList.add('show');
-        }
-        
-        // Close bracket modal
-        function closeCommissionBracketModal() {
-            document.getElementById('commissionBracketModal').classList.remove('show');
-            document.getElementById('addBracketForm').reset();
-        }
-        
-        // Add bracket form handler
-        document.getElementById('addBracketForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            if (currentSession.role !== 'owner') {
-                showToast('❌ Only owner can add brackets', 'error');
-                return;
-            }
-            
-            const minProfit = parseFloat(document.getElementById('bracketMinProfit').value);
-            const maxProfitInput = document.getElementById('bracketMaxProfit').value;
-            const maxProfit = maxProfitInput ? parseFloat(maxProfitInput) : null;
-            const rate = parseFloat(document.getElementById('bracketRate').value);
-            
-            if (maxProfit !== null && minProfit >= maxProfit) {
-                showToast('⚠️ Maximum profit must be greater than minimum', 'error');
-                return;
-            }
-            
-            const newBracket = {
-                id: Date.now(),
-                minProfit: minProfit,
-                maxProfit: maxProfit,
-                rate: rate
-            };
-            
-            commissionBrackets.push(newBracket);
             commissionBrackets.sort((a, b) => a.minProfit - b.minProfit);
-            
-            saveCommissionBrackets();
-            closeCommissionBracketModal();
-            showToast('✅ Bracket added successfully!', 'success');
+        } else {
+            // Set default brackets if none exist
+            commissionBrackets = [
+                { id: 1, minProfit: 0, maxProfit: 299.99, rate: 10 },
+                { id: 2, minProfit: 300, maxProfit: 599.99, rate: 15 },
+                { id: 3, minProfit: 600, maxProfit: 999.99, rate: 20 },
+                { id: 4, minProfit: 1000, maxProfit: null, rate: 25 }
+            ];
+            // Save defaults
+            if (currentSession.role === 'owner') {
+                saveCommissionBrackets();
+            }
+        }
+        renderCommissionBrackets();
+    });
+}
+
+// Save commission brackets
+function saveCommissionBrackets() {
+    if (currentSession.role !== 'owner') return;
+    
+    showSyncingIndicator();
+    getRef('settings/' + currentUsername + '/commissionBrackets').set(commissionBrackets)
+        .then(() => {
+            console.log('✅ Commission brackets saved');
+        })
+        .catch((error) => {
+            showToast('❌ Error saving brackets: ' + error.message, 'error');
         });
+}
+
+// Calculate commission rate based on profit and brackets
+function getCommissionRateForProfit(profit, userId = null) {
+    // Determine which user's commission mode to check
+    const user = userId ? users.find(u => u.id === userId) : currentSession;
+    
+    // If user has flat rate commission mode, use profitPercent
+    if (user && user.commissionMode === 'flatRate') {
+        return user.profitPercent || 20;
+    }
+    
+    // Otherwise use bracket-based system
+    // If brackets system is disabled or empty, use admin's default profitPercent
+    if (!commissionBrackets || commissionBrackets.length === 0) {
+        return user ? (user.profitPercent || 25) : 25;
+    }
+    
+    // Find applicable bracket
+    for (let bracket of commissionBrackets) {
+        const min = bracket.minProfit || 0;
+        const max = bracket.maxProfit;
+        
+        if (max === null || max === undefined) {
+            // This is the "and above" bracket
+            if (profit >= min) {
+                return bracket.rate;
+            }
+        } else {
+            // Standard bracket with min and max
+            if (profit >= min && profit <= max) {
+                return bracket.rate;
+            }
+        }
+    }
+    
+    // Fallback to default if no bracket matches
+    return user ? (user.profitPercent || 25) : 25;
+}
+
+// Render commission brackets list
+function renderCommissionBrackets() {
+    const list = document.getElementById('commissionBracketsList');
+    if (!list) return;
+    
+    if (commissionBrackets.length === 0) {
+        list.innerHTML = '<p style="color: var(--text-color); opacity: 0.6;">No brackets configured yet</p>';
+        return;
+    }
+    
+    list.innerHTML = commissionBrackets.map(bracket => {
+        const maxDisplay = bracket.maxProfit !== null && bracket.maxProfit !== undefined 
+            ? `₱${bracket.maxProfit.toFixed(2)}` 
+            : 'and above';
+        return `
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background: var(--light); border-radius: 10px; margin-bottom: 10px;">
+                <div>
+                    <strong>₱${bracket.minProfit.toFixed(2)} - ${maxDisplay}</strong>
+                    <span style="margin-left: 15px; color: var(--primary); font-weight: 600;">
+                        ${bracket.rate}% commission
+                    </span>
+                </div>
+                <button class="action-btn delete-btn" onclick="deleteBracket(${bracket.id})" ${currentSession.role !== 'owner' ? 'disabled' : ''}>
+                    🗑️
+                </button>
+            </div>
+        `;
+    }).join('');
+}
+
+// Delete bracket
+function deleteBracket(bracketId) {
+    if (currentSession.role !== 'owner') {
+        showToast('❌ Only owner can delete brackets', 'error');
+        return;
+    }
+    
+    if (!confirm('Delete this commission bracket?')) return;
+    
+    commissionBrackets = commissionBrackets.filter(b => b.id !== bracketId);
+    saveCommissionBrackets();
+    showToast('🗑️ Bracket deleted', 'info');
+}
+
+// Open bracket modal
+function openAddBracketModal() {
+    if (currentSession.role !== 'owner') {
+        showToast('❌ Only owner can configure brackets', 'error');
+        return;
+    }
+    document.getElementById('commissionBracketModal').classList.add('show');
+}
+
+// Close bracket modal
+function closeCommissionBracketModal() {
+    document.getElementById('commissionBracketModal').classList.remove('show');
+    document.getElementById('addBracketForm').reset();
+}
+
+// Add bracket form handler
+document.getElementById('addBracketForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    if (currentSession.role !== 'owner') {
+        showToast('❌ Only owner can add brackets', 'error');
+        return;
+    }
+    
+    const minProfit = parseFloat(document.getElementById('bracketMinProfit').value);
+    const maxProfitInput = document.getElementById('bracketMaxProfit').value;
+    const maxProfit = maxProfitInput ? parseFloat(maxProfitInput) : null;
+    const rate = parseFloat(document.getElementById('bracketRate').value);
+    
+    if (maxProfit !== null && minProfit >= maxProfit) {
+        showToast('⚠️ Maximum profit must be greater than minimum', 'error');
+        return;
+    }
+    
+    const newBracket = {
+        id: Date.now(),
+        minProfit: minProfit,
+        maxProfit: maxProfit,
+        rate: rate
+    };
+    
+    commissionBrackets.push(newBracket);
+    commissionBrackets.sort((a, b) => a.minProfit - b.minProfit);
+    
+    saveCommissionBrackets();
+    closeCommissionBracketModal();
+    showToast('✅ Bracket added successfully!', 'success');
+});
         
         // Save brackets to Firebase
         function saveCommissionBrackets() {
@@ -5888,25 +5986,74 @@ totalPrice: subProduct.sharedPrice,
             document.getElementById('userModal').classList.remove('show');
         }
 
-        function closeProductModal() {
-            document.getElementById('productModal').classList.remove('show');
-        }
+function closeProductModal() {
+    document.getElementById('productModal').classList.remove('show');
+}
 
-        function closeCalculatorModal() {
-            document.getElementById('calculatorModal').classList.remove('show');
-        }
+function closeUserModal() {
+    document.getElementById('userModal').classList.remove('show');
+}
 
-        function closeSettingsModal() {
-            document.getElementById('settingsModal').classList.remove('show');
-        }
+function closeCalculatorModal() {
+    document.getElementById('calculatorModal').classList.remove('show');
+}
 
-        document.querySelectorAll('.modal').forEach(modal => {
-            modal.addEventListener('click', function(e) {
-                if (e.target === this) {
-                    this.classList.remove('show');
-                }
-            });
+function closeSettingsModal() {
+    document.getElementById('settingsModal').classList.remove('show');
+}
+
+function closePayoutModal() {
+    document.getElementById('payoutModal').classList.remove('show');
+}
+
+function closeMarkPaidModal() {
+    document.getElementById('markPaidModal').classList.remove('show');
+    document.getElementById('markPaidForm').reset();
+}
+
+function closePayoutHistory() {
+    document.getElementById('payoutHistoryModal').classList.remove('show');
+}
+
+function closeEditProductModal() {
+    document.getElementById('editProductModal').classList.remove('show');
+}
+
+function closeAccountManagementModal() {
+    document.getElementById('accountManagementModal').classList.remove('show');
+    document.getElementById('createAccountForm').reset();
+}
+
+function closeThemeBuilder() {
+    document.getElementById('themeBuilderModal').classList.remove('show');
+}
+
+function closeCommissionBracketModal() {
+    document.getElementById('commissionBracketModal').classList.remove('show');
+    document.getElementById('addBracketForm').reset();
+}
+
+function closeEditCommissionModal() {
+    document.getElementById('editCommissionModal').classList.remove('show');
+}
+
+// Close modals when clicking outside
+document.querySelectorAll('.modal').forEach(modal => {
+    modal.addEventListener('click', function(e) {
+        if (e.target === this) {
+            this.classList.remove('show');
+        }
+    });
+});
+
+// Close modals with Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        document.querySelectorAll('.modal.show').forEach(modal => {
+            modal.classList.remove('show');
         });
+    }
+});
 
         // =================== THEME BUILDER FUNCTIONS ===================
         function toggleThemeBuilder() {
