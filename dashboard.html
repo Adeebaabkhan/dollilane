@@ -4668,157 +4668,41 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
                 });
         }
 
-// =================== DELETE SALE ===================
+        // =================== DELETE SALE ===================
 function deleteSale(id) {
-    if (!confirm('Are you sure you want to delete this sale?')) return;
+    if (!confirm('Delete this sale?')) return;
     
-    console.log('🗑️ Attempting to delete sale ID:', id);
-    
-    // Find the sale in our local data first
-    const sale = sales.find(s => s.id == id);
+    const sale = sales.find(s => s.id === id);
     if (!sale) {
         showToast('❌ Sale not found', 'error');
         return;
     }
     
-    console.log('📋 Sale found:', sale);
-    console.log('👤 Current user:', currentSession);
+    console.log('🗑️ Deleting sale:', sale);
     
-    // =================== SECURITY CHECK ===================
-    // Check if current user has permission to delete this sale
+    // ✅ CORRECT: Use the EXACT username format from Firebase
+    // For @louvreignn sale, userKey should be "@louvreignn" (not cleaned)
+    const userKey = sale.userName; // Keep the original @username format
     
-    // Owner can delete ANY sale
-    if (currentSession.role === 'owner') {
-        console.log('✅ Owner permission granted - can delete any sale');
-    }
-    // Admin can only delete THEIR OWN sales
-    else if (currentSession.role === 'admin') {
-        // Check if this sale belongs to the current admin
-        const isOwnSale = (
-            sale.userId === currentSession.id || 
-            sale.userName === currentSession.username ||
-            sale.userName === currentSession.customName ||
-            (sale.userName && sale.userName.includes(currentSession.username)) ||
-            (sale.userName && sale.userName.includes(currentSession.customName))
-        );
-        
-        if (!isOwnSale) {
-            showToast('❌ Access denied: You can only delete your own sales', 'error');
-            console.log('❌ Admin tried to delete other user sale:', {
-                saleUser: sale.userName,
-                currentUser: currentSession.username,
-                currentCustomName: currentSession.customName
-            });
-            return;
-        }
-        console.log('✅ Admin permission granted - deleting own sale');
-    }
-    // Unknown role - deny access
-    else {
-        showToast('❌ Access denied: Unknown user role', 'error');
-        return;
-    }
+    console.log('🔑 Using userKey:', userKey);
+    console.log('📍 Firebase path: sales/' + userKey + '/' + id);
     
-    // =================== DETERMINE FIREBASE PATH ===================
-    let userKey = null;
-    
-    // Use the sale's original userKey (don't change it)
-    if (sale.userName) {
-        userKey = sale.userName; // Keep original @username format
-    } 
-    else if (sale.userId) {
-        userKey = sale.userId.toString();
-    }
-    // Fallback to current user
-    else if (currentSession.username) {
-        userKey = currentSession.username;
-    }
-    
-    if (!userKey) {
-        showToast('❌ Cannot determine sale location', 'error');
-        return;
-    }
-    
-    // Clean the userKey for Firebase (only replace problematic characters, keep @)
-    const cleanUserKey = userKey.replace(/[.#$/[\]]/g, '_');
-    console.log('🔧 Cleaned userKey for Firebase:', cleanUserKey);
-    
-    const firebasePath = `sales/${cleanUserKey}/${id}`;
-    console.log('📍 Firebase path:', firebasePath);
-    
-    showSyncingIndicator();
-    
-    // Attempt deletion
-    getRef(firebasePath).remove()
+    getRef('sales/' + userKey + '/' + id).remove()
         .then(() => {
-            console.log('✅ Successfully deleted from Firebase');
             showToast('✅ Sale deleted successfully!', 'success');
+            autoCalculatePayouts();
             
-            // Remove from local array immediately
-            const saleIndex = sales.findIndex(s => s.id == id);
-            if (saleIndex > -1) {
-                sales.splice(saleIndex, 1);
+            // Remove from local array and refresh UI
+            const index = sales.findIndex(s => s.id === id);
+            if (index > -1) {
+                sales.splice(index, 1);
             }
-            
-            // Update UI
             renderSalesTable();
             calculateStats();
-            autoCalculatePayouts();
-            
-            console.log('🔄 UI updated after deletion');
         })
         .catch((error) => {
-            console.error('❌ Delete failed:', error);
-            showToast('❌ Failed to delete sale: ' + error.message, 'error');
-        });
-}
-
-// =================== OWNER OVERRIDE FUNCTION ===================
-function ownerDeleteSale(saleId) {
-    // Only owner can use this function
-    if (currentSession.role !== 'owner') {
-        showToast('❌ Owner access required', 'error');
-        return;
-    }
-    
-    if (!confirm('OWNER OVERRIDE: Delete this sale?')) return;
-    
-    const sale = sales.find(s => s.id == saleId);
-    if (!sale) {
-        showToast('❌ Sale not found', 'error');
-        return;
-    }
-    
-    console.log('👑 OWNER override deleting:', sale);
-    
-    // Determine the correct path
-    let userKey = sale.userName || sale.userId?.toString();
-    if (!userKey) {
-        showToast('❌ Cannot determine sale owner', 'error');
-        return;
-    }
-    
-    const cleanUserKey = userKey.replace(/[.#$/[\]]/g, '_');
-    const firebasePath = `sales/${cleanUserKey}/${saleId}`;
-    
-    console.log('📍 Owner deleting from:', firebasePath);
-    
-    showSyncingIndicator();
-    
-    getRef(firebasePath).remove()
-        .then(() => {
-            console.log('✅ Owner delete successful');
-            showToast('✅ Owner: Sale deleted!', 'success');
-            
-            // Update local data and UI
-            sales = sales.filter(s => s.id != saleId);
-            renderSalesTable();
-            calculateStats();
-            autoCalculatePayouts();
-        })
-        .catch((error) => {
-            console.error('❌ Owner delete failed:', error);
-            showToast('❌ Owner: Delete failed - ' + error.message, 'error');
+            console.error('❌ Delete error:', error);
+            showToast('❌ Error: ' + error.message, 'error');
         });
 }
 
