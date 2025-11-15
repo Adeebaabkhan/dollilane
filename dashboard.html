@@ -4671,24 +4671,21 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
 
 function deleteSale(id) {
     if (!confirm('Delete this sale?')) return;
-
+    
     const sale = sales.find(s => s.id === id);
     if (!sale) return;
 
     let userKey = (sale.soldBy || currentSession.username);
 
-    // ✔ Handle ANY number of leading @ signs
-    // @name      → at_name
-    // @@name     → at_at_name
-    // @@@name    → at_at_at_name
-    // name       → name
+    // FIXED: Handle ALL @ cases properly
+    // Convert any number of leading @ (1, 2, 3...) into safe "at_" prefixes
     userKey = userKey.replace(/^@+/, match => 'at_'.repeat(match.length));
 
-    // ✔ Replace Firebase forbidden characters (DO NOT replace @ anymore)
+    // Replace Firebase-unsafe characters (keep @ now safe)
     userKey = userKey.replace(/[.#$\[\]\/]/g, '_');
 
     console.log('Deleting sale from path:', 'sales/' + userKey + '/' + id);
-
+    
     getRef('sales/' + userKey + '/' + id).remove()
         .then(() => {
             showToast('🗑️ Sale deleted', 'info');
@@ -4699,6 +4696,7 @@ function deleteSale(id) {
             showToast('❌ Error: ' + error.message, 'error');
         });
 }
+
 
         // =================== TOGGLE SOLD STATUS ===================
         function toggleSold(id) {
