@@ -4668,7 +4668,7 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
                 });
         }
 
-        // =================== DELETE SALE ===================
+// =================== DELETE SALE ===================
 function deleteSale(id) {
     if (!confirm('Delete this sale?')) return;
     
@@ -4677,22 +4677,22 @@ function deleteSale(id) {
         showToast('❌ Sale not found', 'error');
         return;
     }
+
+    // Build userKey: add "@" if missing, but don't double it!
+    let userKey = sale.userName;
+    if (!userKey.startsWith('@')) {
+        userKey = '@' + userKey;
+    }
     
     console.log('🗑️ Deleting sale:', sale);
-    
-    // ✅ CORRECT: Use the EXACT username format from Firebase
-    // For @louvreignn sale, userKey should be "@louvreignn" (not cleaned)
-    const userKey = sale.userName; // Keep the original @username format
-    
     console.log('🔑 Using userKey:', userKey);
     console.log('📍 Firebase path: sales/' + userKey + '/' + id);
-    
+
     getRef('sales/' + userKey + '/' + id).remove()
         .then(() => {
             showToast('✅ Sale deleted successfully!', 'success');
             autoCalculatePayouts();
-            
-            // Remove from local array and refresh UI
+            // Remove sale from array and refresh UI
             const index = sales.findIndex(s => s.id === id);
             if (index > -1) {
                 sales.splice(index, 1);
