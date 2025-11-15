@@ -3031,7 +3031,7 @@ body.dark-mode .profile-select-btn {
 
 <script>
     // =================== APP CONFIGURATION ===================
-    const APP_NAME = '@dollyhrtzn';
+    const APP_NAME = '@abd';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCa4XYpwePgiTWL30sSkIubYbWizTHwEQU",
@@ -4670,44 +4670,26 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
 
 function deleteSale(id) {
     if (!confirm('Delete this sale?')) return;
+    
     const sale = sales.find(s => s.id === id);
-    if (!sale) {
-        showToast('❌ Sale not found', 'error');
-        return;
-    }
-
-    // Build all possible userKeys
-    let possibleUserKeys = [];
-    if (sale.userName) {
-        possibleUserKeys.push(sale.userName);
-        if (!sale.userName.startsWith('@')) {
-            possibleUserKeys.push('@' + sale.userName);
-        }
-    }
-    if (sale.userId) {
-        possibleUserKeys.push(sale.userId.toString());
-    }
-
-    // Try all keys
-    function tryDelete(keys) {
-        if (keys.length === 0) {
-            showToast('❌ Could not delete sale; no matching Firebase path found', 'error');
-            return;
-        }
-        const key = keys.shift();
-        console.log('Trying delete path:', 'sales/' + key + '/' + id);
-        getRef('sales/' + key + '/' + id).remove().then(() => {
-            showToast('✅ Sale deleted successfully!', 'success');
-            const index = sales.findIndex(s => s.id === id);
-            if (index > -1) sales.splice(index, 1);
-            renderSalesTable();
-            calculateStats();
-        }).catch((error) => {
-            console.error('❌ Delete error on path', key, error);
-            tryDelete(keys); // Try next possible key
+    if (!sale) return;
+    
+    // FIX: Handle @ symbols and other special characters
+    const userKey = (sale.soldBy || currentSession.username)
+        .replace(/[.#$@[\]]/g, '_')  // Added @ to the replacement
+        .replace(/^@/, 'at_');       // Special handling for leading @
+    
+    console.log('Deleting sale from path:', 'sales/' + userKey + '/' + id);
+    
+    getRef('sales/' + userKey + '/' + id).remove()
+        .then(() => {
+            showToast('🗑️ Sale deleted', 'info');
+            autoCalculatePayouts();
+        })
+        .catch((error) => {
+            console.error('Delete error:', error);
+            showToast('❌ Error: ' + error.message, 'error');
         });
-    }
-    tryDelete(possibleUserKeys);
 }
 
         // =================== TOGGLE SOLD STATUS ===================
