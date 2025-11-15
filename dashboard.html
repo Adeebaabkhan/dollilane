@@ -1808,7 +1808,7 @@ body.dark-mode .profile-select-btn {
                 <div class="stat-label">Sold</div>
                 <div class="stat-value" id="soldCount">0</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card" style="display: none;">
                 <div class="stat-icon">📥</div>
                 <div class="stat-label">In Stock</div>
                 <div class="stat-value" id="stockCount">0</div>
@@ -2034,9 +2034,8 @@ body.dark-mode .profile-select-btn {
                 <!-- Sold Status -->
                 <div class="form-group">
                     <label>📦 Status</label>
-                    <select id="productSoldStatus" required>
-                        <option value="no">In Stock</option>
-                        <option value="yes">Sold</option>
+                    <select id="productSoldStatus" required style="display: none;">
+                        <option value="yes" selected>Sold</option>
                     </select>
                 </div>
 
@@ -2062,10 +2061,11 @@ body.dark-mode .profile-select-btn {
                                 <th style="min-width: 180px;">📦 Product</th>
                                 <th style="min-width: 120px;">👤 Account Type</th>
                                 <th style="min-width: 100px;">🛡️ Warranty</th>
+                                <th style="min-width: 120px;">👤 Buyer Username</th>
+                                <th style="min-width: 150px;">📧 Account Email</th>
                                 <th style="min-width: 100px;">💵 Buy (₱)</th>
                                 <th style="min-width: 100px;">💰 Sell (₱)</th>
                                 <th style="min-width: 80px;">🔢 Qty</th>
-                                <th style="min-width: 100px;">📦 Status</th>
                                 <th style="min-width: 80px;">Actions</th>
                             </tr>
                         </thead>
@@ -2100,7 +2100,6 @@ body.dark-mode .profile-select-btn {
                 </select>
                 <button class="filter-btn active" id="filterAll">📊 All</button>
                 <button class="filter-btn" id="filterSold">✅ Sold</button>
-                <button class="filter-btn" id="filterStock">📦 In Stock</button>
                 <button class="btn-small btn-success" id="btnExport">📥 Export CSV</button>
                 <button class="btn-small btn-danger" id="btnClearAll">🗑️ Clear All</button>
             </div>
@@ -2123,13 +2122,12 @@ body.dark-mode .profile-select-btn {
                             <th>Qty</th>
                             <th>Price</th>
                             <th>Total</th>
-                            <th>Sold</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="salesTableBody">
                         <tr>
-                            <td colspan="17">
+                            <td colspan="16">
                                 <div class="empty-state">
                                     <div class="empty-icon">📦</div>
                                     <h3>No sales yet</h3>
@@ -3043,6 +3041,7 @@ const firebaseConfig = {
   appId: "1:902250837280:web:f13bf153fbf40d15fdd345",
   measurementId: "G-PSDYTNWRNB"
 };
+
     firebase.initializeApp(firebaseConfig);
     const database = firebase.database();
 
@@ -4423,93 +4422,95 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
                         showToast('❌ Error: ' + error.message, 'error');
                     });
                 
-            } else {
-                // Regular sale (non-streaming)
-                const warrantyType = document.querySelector('input[name="warranty"]:checked');
-                const accountType = document.querySelector('input[name="accountType"]:checked');
-                
-                if (!warrantyType) {
-                    showToast('⚠️ Please select warranty type (FW or NW)', 'error');
-                    return;
-                }
-                
-                if (!accountType) {
-                    showToast('⚠️ Please select account type (Solo or Shared)', 'error');
-                    return;
-                }
-                                // Validate buyer username and account email for regular sales
-                const buyerUsername = document.getElementById('buyerUsernameInput').value.trim();
-                const accountEmail = document.getElementById('accountEmailInput').value.trim();
-                
-                if (!buyerUsername) {
-                    showToast('⚠️ Please enter buyer username', 'error');
-                    return;
-                }
-                
-                if (!accountEmail) {
-                    showToast('⚠️ Please enter account email', 'error');
-                    return;
-                }
-                
-                // Basic email validation
-                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                if (!emailRegex.test(accountEmail)) {
-                    showToast('⚠️ Please enter a valid email address', 'error');
-                    return;
-                }
-                
-                const quantity = parseInt(document.getElementById('productQuantity').value);
-                const price = parseFloat(document.getElementById('productPrice').textContent.replace('₱', ''));
-                
-                // Calculate profit first: Profit = Sales - Capital
-                const actualProfit = product.sellPrice - product.buyPrice;
-                
-                // Use bracket-based commission for admins or 100% for owner
-                const userCommissionPercent = currentSession.role === 'owner' ? 100 : getCommissionRateForProfit(actualProfit);
-                
-                // Calculate salary: Salary = Profit × Rate (%)
-                const commissionAmount = (actualProfit * userCommissionPercent) / 100;
-                const yourProfit = currentSession.role === 'owner' ? actualProfit : commissionAmount;
-                
-                const newSale = {
-                    id: Date.now(),
-                    userId: currentSession.id,
-                    userName: currentSession.customName,
-                    productId: productId,
-                    productName: product.name,
-                    buyerUsername: document.getElementById('buyerUsernameInput').value,
-                    accountEmail: document.getElementById('accountEmailInput').value,
-                    warranty: warrantyType.value,
-                    accountType: accountType.value,
-                    quantity: quantity,
-                    price: price,
-                    buyPrice: product.buyPrice,
-                    sellPrice: product.sellPrice,
-                    commission: yourProfit,
-                    totalPrice: price * quantity,
-                    totalCommission: yourProfit * quantity,
-                    sold: document.getElementById('productSoldStatus').value === 'yes',
-                    date: new Date().toISOString().split('T')[0]
-                };
-                
-                const userKey = currentSession.username.replace(/[.#$/[\]]/g, '_');
-                showSyncingIndicator();
-                getRef('sales/' + userKey + '/' + newSale.id).set(newSale)
-                    .then(() => {
-                        document.getElementById('addSaleForm').reset();
-                        document.getElementById('buyerUsernameInput').value = '';
-                        document.getElementById('accountEmailInput').value = '';
-                        document.getElementById('productDetailsCard').style.display = 'none';
-                        document.getElementById('totalEarningsCard').style.display = 'none';
-                        showToast('✅ Sale added successfully!', 'success');
-                        autoCalculatePayouts();
-                    })
-                    .catch((error) => {
-                        showToast('❌ Error: ' + error.message, 'error');
-                    });
-            }
+// =================== COMPLETE THE CUT-OFF CODE ===================
+} else {
+    const product = products.find(p => p.id === productId);
+    if (!product) return;
+    
+    const warrantyType = document.querySelector('input[name="warranty"]:checked')?.value;
+    const accountType = document.querySelector('input[name="accountType"]:checked')?.value;
+    
+    if (!warrantyType) {
+        showToast('⚠️ Please select warranty type (FW or NW)', 'error');
+        return;
+    }
+    
+    if (!accountType) {
+        showToast('⚠️ Please select account type (Solo or Shared)', 'error');
+        return;
+    }
+    
+    // Validate buyer username and account email for regular sales
+    const buyerUsername = document.getElementById('buyerUsernameInput').value.trim();
+    const accountEmail = document.getElementById('accountEmailInput').value.trim();
+    
+    if (!buyerUsername) {
+        showToast('⚠️ Please enter buyer username', 'error');
+        return;
+    }
+    
+    if (!accountEmail) {
+        showToast('⚠️ Please enter account email', 'error');
+        return;
+    }
+    
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(accountEmail)) {
+        showToast('⚠️ Please enter a valid email address', 'error');
+        return;
+    }
+    
+    const quantity = parseInt(document.getElementById('productQuantity').value);
+    const price = parseFloat(document.getElementById('productPrice').textContent.replace('₱', ''));
+    
+    // Calculate profit first: Profit = Sales - Capital
+    const actualProfit = product.sellPrice - product.buyPrice;
+    
+    // Use bracket-based commission for admins or 100% for owner
+    const userCommissionPercent = currentSession.role === 'owner' ? 100 : getCommissionRateForProfit(actualProfit);
+    
+    // Calculate salary: Salary = Profit × Rate (%)
+    const commissionAmount = (actualProfit * userCommissionPercent) / 100;
+    const yourProfit = currentSession.role === 'owner' ? actualProfit : commissionAmount;
+    
+    const newSale = {
+        id: Date.now(),
+        userId: currentSession.id,
+        userName: currentSession.customName,
+        productId: productId,
+        productName: product.name,
+        buyerUsername: document.getElementById('buyerUsernameInput').value,
+        accountEmail: document.getElementById('accountEmailInput').value,
+        warranty: warrantyType.value,
+        accountType: accountType.value,
+        quantity: quantity,
+        price: price,
+        buyPrice: product.buyPrice,
+        sellPrice: product.sellPrice,
+        commission: yourProfit,
+        totalPrice: price * quantity,
+        totalCommission: yourProfit * quantity,
+        sold: true,                
+        date: new Date().toISOString().split('T')[0]
+    };
+    
+    const userKey = currentSession.username.replace(/[.#$/[\]]/g, '_');
+    showSyncingIndicator();
+    getRef('sales/' + userKey + '/' + newSale.id).set(newSale)
+        .then(() => {
+            document.getElementById('addSaleForm').reset();
+            document.getElementById('buyerUsernameInput').value = '';
+            document.getElementById('accountEmailInput').value = '';
+            document.getElementById('productDetailsCard').style.display = 'none';
+            document.getElementById('totalEarningsCard').style.display = 'none';
+            showToast('✅ Sale added successfully!', 'success');
+            autoCalculatePayouts();
+        })
+        .catch((error) => {
+            showToast('❌ Error: ' + error.message, 'error');
         });
-
+}
         // =================== ACCOUNT MANAGEMENT ===================
         
         function openAccountManagementModal() {
@@ -4674,20 +4675,36 @@ function deleteSale(id) {
     const sale = sales.find(s => s.id === id);
     if (!sale) return;
 
-    let userKey = (sale.soldBy || currentSession.username);
+    let userKey;
 
-    // FIXED: Handle ALL @ cases properly
-    // Convert any number of leading @ (1, 2, 3...) into safe "at_" prefixes
+    if (currentSession.role === 'owner') {
+        // OWNER: Can delete any sale - use the sale's original user
+        userKey = sale.userName || sale.soldBy || currentSession.username;
+        console.log('👑 Owner deleting sale from:', userKey);
+    } else {
+        // ADMIN: Can only delete their own sales
+        const isOwnSale = sale.userId === currentSession.id || 
+                         sale.soldBy === currentSession.username ||
+                         sale.userName === currentSession.customName;
+        
+        if (!isOwnSale) {
+            showToast('❌ You can only delete your own sales!', 'error');
+            return;
+        }
+        userKey = currentSession.username;
+        console.log('👤 Admin deleting their own sale');
+    }
+
+    // Handle @ symbols in usernames for Firebase safety
     userKey = userKey.replace(/^@+/, match => 'at_'.repeat(match.length));
-
-    // Replace Firebase-unsafe characters (keep @ now safe)
     userKey = userKey.replace(/[.#$\[\]\/]/g, '_');
 
     console.log('Deleting sale from path:', 'sales/' + userKey + '/' + id);
     
+    showSyncingIndicator();
     getRef('sales/' + userKey + '/' + id).remove()
         .then(() => {
-            showToast('🗑️ Sale deleted', 'info');
+            showToast('🗑️ Sale deleted successfully!', 'success');
             autoCalculatePayouts();
         })
         .catch((error) => {
@@ -4697,24 +4714,10 @@ function deleteSale(id) {
 }
 
 
-        // =================== TOGGLE SOLD STATUS ===================
-        function toggleSold(id) {
-            const sale = sales.find(s => s.id === id);
-            if (!sale) return;
-            
-            sale.sold = !sale.sold;
-            
-            const userKey = sale.userName.replace(/[.#$/[\]]/g, '_');
-            showSyncingIndicator();
-            getRef('sales/' + userKey + '/' + id).update({ sold: sale.sold })
-                .then(() => {
-                    showToast(sale.sold ? '✅ Marked as sold!' : '📦 Marked as in stock', 'success');
-                    autoCalculatePayouts();
-                })
-                .catch((error) => {
-                    showToast('❌ Error: ' + error.message, 'error');
-                });
-        }
+function toggleSold(id) {
+    // All items are always sold - no toggle functionality
+    showToast('✅ All items are sold!', 'info');
+}
 
         // =================== EDIT SALE ===================
         function editSale(id) {
@@ -4891,15 +4894,12 @@ function deleteSale(id) {
                 acc.totalSales += (s.totalPrice || 0);
                 acc.totalProducts += s.quantity;
                 
-                if (s.sold) {
-                    acc.soldCount += s.quantity;
-                    // Calculate total capital (buy prices) for sold items
-                    acc.totalCapital += ((s.buyPrice || 0) * s.quantity);
-                    // Calculate business profit (Sell Price - Buy Price) for sold items
-                    acc.totalProfit += ((s.price || 0) - (s.buyPrice || 0)) * s.quantity;
-                } else {
-                    acc.stockCount += s.quantity;
-                }
+                // All items are sold
+                acc.soldCount += s.quantity;
+                // Calculate total capital (buy prices) for sold items
+                acc.totalCapital += ((s.buyPrice || 0) * s.quantity);
+                // Calculate business profit (Sell Price - Buy Price) for sold items
+                acc.totalProfit += ((s.price || 0) - (s.buyPrice || 0)) * s.quantity;
                 
                 return acc;
             }, {
@@ -5009,7 +5009,6 @@ function deleteSale(id) {
                         <td>${sale.quantity}</td>
                         <td class="amount-cell">₱${sale.price.toFixed(2)}</td>
                         <td class="amount-cell">₱${sale.totalPrice.toFixed(2)}</td>
-                        <td><span class="sold-check" onclick="toggleSold(${sale.id})">${soldIcon}</span></td>
                         <td>
                             <button class="action-btn edit-btn" onclick="editSale(${sale.id})">✏️</button>
                             <button class="action-btn delete-btn" onclick="deleteSale(${sale.id})">🗑️</button>
@@ -5114,8 +5113,7 @@ function deleteSale(id) {
                 if (!user) return '';
                 
                 // Get sales for this user in the current period
-                let userSales = sales.filter(s => s.userId === user.id && s.sold);
-                
+                let userSales = sales.filter(s => s.userId === user.id);                
                 if (currentPayoutPeriod === 'week') {
                     const weekAgo = new Date(now);
                     weekAgo.setDate(now.getDate() - 7);
@@ -5277,8 +5275,7 @@ function deleteSale(id) {
             const adminUsers = users.filter(u => u.role === 'admin');
             
             adminUsers.forEach(user => {
-                const userSales = sales.filter(s => s.userId === user.id && s.sold);
-                
+                const userSales = sales.filter(s => s.userId === user.id && s.sold);                
                 const totalCommission = userSales.reduce((sum, s) => {
                     return sum + ((s.commission || 0) * s.quantity);
                 }, 0);
@@ -5997,74 +5994,74 @@ document.getElementById('addBracketForm').addEventListener('submit', function(e)
             document.getElementById('userModal').classList.remove('show');
         }
 
-function closeProductModal() {
-    document.getElementById('productModal').classList.remove('show');
-}
-
-function closeUserModal() {
-    document.getElementById('userModal').classList.remove('show');
-}
-
-function closeCalculatorModal() {
-    document.getElementById('calculatorModal').classList.remove('show');
-}
-
-function closeSettingsModal() {
-    document.getElementById('settingsModal').classList.remove('show');
-}
-
-function closePayoutModal() {
-    document.getElementById('payoutModal').classList.remove('show');
-}
-
-function closeMarkPaidModal() {
-    document.getElementById('markPaidModal').classList.remove('show');
-    document.getElementById('markPaidForm').reset();
-}
-
-function closePayoutHistory() {
-    document.getElementById('payoutHistoryModal').classList.remove('show');
-}
-
-function closeEditProductModal() {
-    document.getElementById('editProductModal').classList.remove('show');
-}
-
-function closeAccountManagementModal() {
-    document.getElementById('accountManagementModal').classList.remove('show');
-    document.getElementById('createAccountForm').reset();
-}
-
-function closeThemeBuilder() {
-    document.getElementById('themeBuilderModal').classList.remove('show');
-}
-
-function closeCommissionBracketModal() {
-    document.getElementById('commissionBracketModal').classList.remove('show');
-    document.getElementById('addBracketForm').reset();
-}
-
-function closeEditCommissionModal() {
-    document.getElementById('editCommissionModal').classList.remove('show');
-}
-
-// Close modals when clicking outside
-document.querySelectorAll('.modal').forEach(modal => {
-    modal.addEventListener('click', function(e) {
-        if (e.target === this) {
-            this.classList.remove('show');
+        function closeProductModal() {
+            document.getElementById('productModal').classList.remove('show');
         }
-    });
-});
 
-// Close modals with Escape key
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') {
-        document.querySelectorAll('.modal.show').forEach(modal => {
-            modal.classList.remove('show');
+        function closeUserModal() {
+            document.getElementById('userModal').classList.remove('show');
+        }
+
+        function closeCalculatorModal() {
+            document.getElementById('calculatorModal').classList.remove('show');
+        }
+
+        function closeSettingsModal() {
+            document.getElementById('settingsModal').classList.remove('show');
+        }
+
+        function closePayoutModal() {
+            document.getElementById('payoutModal').classList.remove('show');
+        }
+
+        function closeMarkPaidModal() {
+            document.getElementById('markPaidModal').classList.remove('show');
+            document.getElementById('markPaidForm').reset();
+        }
+
+        function closePayoutHistory() {
+            document.getElementById('payoutHistoryModal').classList.remove('show');
+        }
+
+        function closeEditProductModal() {
+            document.getElementById('editProductModal').classList.remove('show');
+        }
+
+        function closeAccountManagementModal() {
+            document.getElementById('accountManagementModal').classList.remove('show');
+            document.getElementById('createAccountForm').reset();
+        }
+
+        function closeThemeBuilder() {
+            document.getElementById('themeBuilderModal').classList.remove('show');
+        }
+
+        function closeCommissionBracketModal() {
+            document.getElementById('commissionBracketModal').classList.remove('show');
+            document.getElementById('addBracketForm').reset();
+        }
+
+        function closeEditCommissionModal() {
+            document.getElementById('editCommissionModal').classList.remove('show');
+        }
+
+        // Close modals when clicking outside
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('click', function(e) {
+                if (e.target === this) {
+                    this.classList.remove('show');
+                }
+            });
         });
-    }
-});
+
+        // Close modals with Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                document.querySelectorAll('.modal.show').forEach(modal => {
+                    modal.classList.remove('show');
+                });
+            }
+        });
 
         // =================== THEME BUILDER FUNCTIONS ===================
         function toggleThemeBuilder() {
@@ -6215,61 +6212,66 @@ document.addEventListener('keydown', function(e) {
             }
         }
 
-        function addBulkRow() {
-            const rowId = Date.now() + Math.random();
-            bulkSalesRows.push(rowId);
-            
-            const tbody = document.getElementById('bulkSalesTableBody');
-            const row = document.createElement('tr');
-            row.id = `bulk-row-${rowId}`;
-            
-            // Build product options from available products
-            let productOptions = '<option value="">-- Select --</option>';
-            products.forEach(product => {
-                productOptions += `<option value="${product.id}" data-buy="${product.buyPrice}" data-sell="${product.sellPrice}">${product.name}</option>`;
-            });
-            
-            row.innerHTML = `
-                <td>
-                    <select class="bulk-product" data-row="${rowId}" onchange="updateBulkRowPrices(${rowId})">
-                        ${productOptions}
-                    </select>
-                </td>
-                <td>
-                    <select class="bulk-account-type">
-                        <option value="Solo">Solo</option>
-                        <option value="Shared">Shared</option>
-                    </select>
-                </td>
-                <td>
-                    <select class="bulk-warranty">
-                        <option value="FW">FW</option>
-                        <option value="NW">NW</option>
-                    </select>
-                </td>
-                <td>
-                    <input type="number" class="bulk-buy" placeholder="0" min="0" step="0.01">
-                </td>
-                <td>
-                    <input type="number" class="bulk-sell" placeholder="0" min="0" step="0.01">
-                </td>
-                <td>
-                    <input type="number" class="bulk-qty" placeholder="1" min="1" value="1">
-                </td>
-                <td>
-                    <select class="bulk-status">
-                        <option value="no">In Stock</option>
-                        <option value="yes">Sold</option>
-                    </select>
-                </td>
-                <td>
-                    <button class="bulk-row-delete" onclick="removeBulkRow(${rowId})">✕</button>
-                </td>
-            `;
-            
-            tbody.appendChild(row);
-            updateBulkRowCount();
-        }
+function addBulkRow() {
+    const tableBody = document.getElementById('bulkSalesTableBody');
+    const rowId = Date.now() + Math.random();
+    
+    const row = document.createElement('tr');
+    row.id = 'bulkRow_' + rowId;
+    row.innerHTML = `
+        <td>
+            <select class="bulk-product" required>
+                <option value="">-- Select Product --</option>
+                ${products.map(p => `<option value="${p.id}" data-buy="${p.buyPrice}" data-sell="${p.sellPrice}">${p.name}</option>`).join('')}
+            </select>
+        </td>
+        <td>
+            <select class="bulk-account-type" required>
+                <option value="Solo">Solo</option>
+                <option value="Shared">Shared</option>
+            </select>
+        </td>
+        <td>
+            <select class="bulk-warranty" required>
+                <option value="FW">Full Warranty</option>
+                <option value="NW">No Warranty</option>
+            </select>
+        </td>
+        <td>
+            <input type="text" class="bulk-buyer-username" placeholder="Buyer Username" required>
+        </td>
+        <td>
+            <input type="email" class="bulk-account-email" placeholder="Account Email" required>
+        </td>
+        <td>
+            <input type="number" class="bulk-buy-price" placeholder="Buy Price" readonly>
+        </td>
+        <td>
+            <input type="number" class="bulk-sell-price" placeholder="Sell Price" readonly>
+        </td>
+        <td>
+            <input type="number" class="bulk-quantity" value="1" min="1" required>
+        </td>
+        <td>
+            <button type="button" class="bulk-row-delete" onclick="deleteBulkRow('${rowId}')">🗑️</button>
+        </td>
+    `;
+    
+    tableBody.appendChild(row);
+    
+    // Add event listener for product selection
+    const productSelect = row.querySelector('.bulk-product');
+    productSelect.addEventListener('change', function() {
+        const selectedOption = this.options[this.selectedIndex];
+        const buyPrice = selectedOption.getAttribute('data-buy');
+        const sellPrice = selectedOption.getAttribute('data-sell');
+        
+        row.querySelector('.bulk-buy-price').value = buyPrice || '';
+        row.querySelector('.bulk-sell-price').value = sellPrice || '';
+    });
+    
+    updateBulkRowCount();
+}
 
         function removeBulkRow(rowId) {
             bulkSalesRows = bulkSalesRows.filter(id => id !== rowId);
