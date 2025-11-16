@@ -3032,6 +3032,7 @@ const firebaseConfig = {
   measurementId: "G-PSDYTNWRNB"
 };
 
+
     firebase.initializeApp(firebaseConfig);
     const database = firebase.database();
 
@@ -3511,24 +3512,9 @@ function loadAllData() {
             // Render user list in Users Management modal
             renderUserList();
         }
-    });
-    
-    // Load sales
-    getRef('sales').on('value', (snapshot) => {
-        const salesData = snapshot.val() || {};
-        sales = [];
         
-        Object.keys(salesData).forEach(userKey => {
-            const userSales = salesData[userKey];
-            Object.values(userSales).forEach(sale => {
-                sales.push(sale);
-            });
-        });
-        
-        console.log('✅ Loaded sales:', sales.length);
-        calculateStats();
-        renderSalesTable();
-        updateCharts();
+        // Load sales AFTER users are loaded (so we can match user info)
+        loadAllSalesData();
     });
     
     // Load products
@@ -3543,14 +3529,15 @@ function loadAllData() {
         }
     });
 
-// Load subscription products
-getRef('subscriptionProducts').on('value', (snapshot) => {
-    const subProductsData = snapshot.val() || {};
-    subscriptionProducts = Object.values(subProductsData);
-    console.log('📺 Loaded subscription products:', subscriptionProducts.length);
-    renderSubscriptionProducts();
-    updateProductDropdown();
-});
+    // Load subscription products
+    getRef('subscriptionProducts').on('value', (snapshot) => {
+        const subProductsData = snapshot.val() || {};
+        subscriptionProducts = Object.values(subProductsData);
+        console.log('📺 Loaded subscription products:', subscriptionProducts.length);
+        renderSubscriptionProducts();
+        updateProductDropdown();
+    });
+    
     // Load payouts
     getRef('payouts').on('value', (snapshot) => {
         const payData = snapshot.val() || {};
@@ -3590,6 +3577,69 @@ getRef('subscriptionProducts').on('value', (snapshot) => {
     populateSoldByDropdown();
 }
 
+// NEW FUNCTION: Fixed sales loading for owner and admin
+function loadAllSalesData() {
+    console.log('🔄 Loading sales data...');
+    
+    if (currentSession.role === 'owner') {
+        // Owner: Load sales from ALL users
+        getRef('sales').on('value', (snapshot) => {
+            const salesData = snapshot.val() || {};
+            sales = [];
+            
+            Object.keys(salesData).forEach(userKey => {
+                const userSales = salesData[userKey];
+                if (userSales && typeof userSales === 'object') {
+                    Object.values(userSales).forEach(sale => {
+                        // Add user info to each sale for owner's view
+                        const saleUser = users.find(u => {
+                            const safeUsername = u.username.replace(/[.#$/[\]]/g, '_');
+                            return safeUsername === userKey;
+                        });
+                        
+                        if (saleUser) {
+                            sale.userName = saleUser.customName;
+                            sale.userId = saleUser.id;
+                            sale.userRole = saleUser.role;
+                        } else {
+                            // Fallback: try to extract from sale data or use userKey
+                            sale.userName = sale.userName || userKey;
+                            sale.userId = sale.userId || 'unknown';
+                            sale.userRole = sale.userRole || 'unknown';
+                        }
+                        
+                        sales.push(sale);
+                    });
+                }
+            });
+            
+            console.log('✅ Owner loaded all sales:', sales.length);
+            calculateStats();
+            renderSalesTable();
+            updateCharts();
+        });
+    } else {
+        // Admin: Load only their own sales
+        const userKey = currentSession.username.replace(/[.#$/[\]]/g, '_');
+        getRef('sales/' + userKey).on('value', (snapshot) => {
+            const salesData = snapshot.val() || {};
+            sales = Object.values(salesData);
+            
+            // Add user info to each sale
+            sales.forEach(sale => {
+                sale.userName = currentSession.customName;
+                sale.userId = currentSession.id;
+                sale.userRole = currentSession.role;
+            });
+            
+            console.log('✅ Admin loaded sales:', sales.length);
+            calculateStats();
+            renderSalesTable();
+            updateCharts();
+        });
+    }
+}
+
 // Populate Sold By dropdown with admin names
 function populateSoldByDropdown() {
     const soldBySelect = document.getElementById('soldBySelect');
@@ -3608,28 +3658,28 @@ function populateSoldByDropdown() {
     });
 }
 
-        function saveSettings() {
-            settings.theme = document.getElementById('themeSelect').value;
-            
-            showSyncingIndicator();
-            getRef('settings/' + currentUsername).set(settings)
-                .then(() => {
-                    showToast('✅ Settings saved!', 'success');
-                    closeSettingsModal();
-                })
-                .catch((error) => {
-                    showToast('❌ Error: ' + error.message, 'error');
-                });
-        }
+function saveSettings() {
+    settings.theme = document.getElementById('themeSelect').value;
+    
+    showSyncingIndicator();
+    getRef('settings/' + currentUsername).set(settings)
+        .then(() => {
+            showToast('✅ Settings saved!', 'success');
+            closeSettingsModal();
+        })
+        .catch((error) => {
+            showToast('❌ Error: ' + error.message, 'error');
+        });
+}
 
-        function applySettings() {
-            document.body.className = settings.theme;
-            if (settings.darkMode) {
-                document.body.classList.add('dark-mode');
-            }
-            
-            document.getElementById('themeSelect').value = settings.theme;
-        }
+function applySettings() {
+    document.body.className = settings.theme;
+    if (settings.darkMode) {
+        document.body.classList.add('dark-mode');
+    }
+    
+    document.getElementById('themeSelect').value = settings.theme;
+}
 
         // =================== PRODUCT MANAGEMENT ===================
         
@@ -4151,10 +4201,29 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
         }
 
 // DELETE SALE - FIXED FOR OWNER DELETING ADMIN SALES
-function deleteSale(saleId) {
-    console.log('🔍 Delete called for sale:', saleId);
+function deleteSale(saleId, saleUserId = null) {
+    console.log('🔍 Delete called for sale:', saleId, 'User ID:', saleUserId);
     
-    const saleRef = getRef(`sales/${currentSession.id}/${saleId}`);
+    // Determine the correct Firebase path
+    let saleRef;
+    
+    if (currentSession.role === 'owner' && saleUserId && saleUserId !== currentSession.id) {
+        // Owner deleting admin sale - find admin's username
+        const adminUser = users.find(u => u.id === saleUserId);
+        if (adminUser) {
+            const userKey = adminUser.username.replace(/[.#$/[\]]/g, '_');
+            saleRef = getRef(`sales/${userKey}/${saleId}`);
+            console.log('👑 Owner deleting admin sale, path:', `sales/${userKey}/${saleId}`);
+        } else {
+            showToast('❌ Could not find admin user', 'error');
+            return;
+        }
+    } else {
+        // Regular deletion (own sales)
+        const userKey = currentSession.username.replace(/[.#$/[\]]/g, '_');
+        saleRef = getRef(`sales/${userKey}/${saleId}`);
+        console.log('👤 Deleting own sale, path:', `sales/${userKey}/${saleId}`);
+    }
     
     saleRef.once('value').then((snapshot) => {
         const sale = snapshot.val();
@@ -4189,7 +4258,7 @@ function deleteSale(saleId) {
         } 
         else {
             // ✅ USER: Can delete their own sales ONLY
-            canDelete = (saleCreatorId === currentUserId);
+            canSalelete = (saleCreatorId === currentUserId);
             console.log('👤 User permission:', canDelete);
         }
 
@@ -4201,7 +4270,7 @@ function deleteSale(saleId) {
         }
 
         // CONFIRM DELETION
-        if (!confirm(`🗑️ Delete this sale?\nProduct: ${sale.product}\nBuyer: ${sale.buyerUsername}`)) {
+        if (!confirm(`🗑️ Delete this sale?\nProduct: ${sale.productName || sale.product}\nBuyer: ${sale.buyerUsername}`)) {
             return;
         }
 
@@ -4211,28 +4280,26 @@ function deleteSale(saleId) {
                 console.log('✅ Sale deleted from Firebase');
                 
                 // SUCCESS MESSAGE
-                alert('✅ Sale deleted successfully!');
                 showToast('🗑️ Sale deleted', 'success');
+                autoCalculatePayouts();
                 
                 // REMOVE FROM UI
-                const saleRow = document.getElementById(`sale-${saleId}`);
+                const saleRow = document.querySelector(`[data-sale-id="${saleId}"]`);
                 if (saleRow) {
                     saleRow.remove();
                     console.log('✅ Removed from UI');
                 } else {
                     console.log('🔄 Row not found, refreshing table...');
-                    updateUI(); // Refresh entire table
+                    renderSalesTable(); // Refresh entire table
                 }
             })
             .catch((error) => {
                 console.error('❌ Firebase error:', error);
-                alert('❌ Delete failed: ' + error.message);
-                showToast('❌ Error deleting sale', 'error');
+                showToast('❌ Error deleting sale: ' + error.message, 'error');
             });
     }).catch((error) => {
         console.error('❌ Fetch error:', error);
-        alert('❌ Error: ' + error.message);
-        showToast('❌ Error fetching sale', 'error');
+        showToast('❌ Error fetching sale: ' + error.message, 'error');
     });
 }
         // Edit Product
@@ -4742,23 +4809,23 @@ function deleteSale(id) {
         });
 }
 
-        function editSale(id) {
-            const sale = sales.find(s => s.id === id);
-            if (!sale) return;
-            
-            document.getElementById('productSelect').value = sale.productId;
-            displayProductDetails(sale.productId);
-            document.querySelector(`input[name="warranty"][value="${sale.warranty}"]`).checked = true;
-            document.querySelector(`input[name="accountType"][value="${sale.accountType}"]`).checked = true;
-            document.getElementById('productQuantity').value = sale.quantity;
-            document.getElementById('productSoldStatus').value = sale.sold ? 'yes' : 'no';
-            document.getElementById('buyerUsernameInput').value = sale.buyerUsername || '';
-            document.getElementById('accountEmailInput').value = sale.accountEmail || '';
-            
-            deleteSale(id);
-            document.getElementById('addSaleForm').scrollIntoView({ behavior: 'smooth' });
-            showToast('📝 Edit mode - Update and save', 'info');
-        }
+function editSale(id) {
+    const sale = sales.find(s => s.id === id);
+    if (!sale) return;
+    
+    document.getElementById('productSelect').value = sale.productId;
+    displayProductDetails(sale.productId);
+    document.querySelector(`input[name="warranty"][value="${sale.warranty}"]`).checked = true;
+    document.querySelector(`input[name="accountType"][value="${sale.accountType}"]`).checked = true;
+    document.getElementById('productQuantity').value = sale.quantity;
+    document.getElementById('productSoldStatus').value = sale.sold ? 'yes' : 'no';
+    document.getElementById('buyerUsernameInput').value = sale.buyerUsername || '';
+    document.getElementById('accountEmailInput').value = sale.accountEmail || '';
+    
+    deleteSale(id, sale.userId);
+    document.getElementById('addSaleForm').scrollIntoView({ behavior: 'smooth' });
+    showToast('📝 Edit mode - Update and save', 'info');
+}
         // =================== USER MANAGEMENT ===================
         document.getElementById('addUserForm').addEventListener('submit', function(e) {
             e.preventDefault();
@@ -5011,30 +5078,31 @@ function deleteSale(id) {
                 const profileName = sale.profileName || '-';
                 const soldBy = sale.soldBy || sale.userName || '-';
                 
-                return `
-                    <tr>
-                        <td>${sale.date}</td>
-                        ${currentSession.role === 'owner' ? `<td>${sale.userName}</td>` : ''}
-                        <td>${sale.productName}</td>
-                        <td>${sale.buyerUsername || '-'}</td>
-                        <td>${sale.accountEmail || '-'}</td>
-                        <td>${accountId}</td>
-                        <td>${profileNumber}</td>
-                        <td>${slotNumber}</td>
-                        <td>${profileName}</td>
-                        <td>${soldBy}</td>
-                        <td><span class="warranty-badge ${warrantyClass}">${sale.warranty}</span></td>
-                        <td><span class="account-type-badge ${accountClass}">${sale.accountType}</span></td>
-                        <td>${sale.quantity}</td>
-                        <td class="amount-cell">₱${sale.price.toFixed(2)}</td>
-                        <td class="amount-cell">₱${sale.totalPrice.toFixed(2)}</td>
-                        <td><span class="sold-check">✅</span></td>
-                        <td>
-                            <button class="action-btn edit-btn" onclick="editSale(${sale.id})">✏️</button>
-                            <button class="action-btn delete-btn" onclick="deleteSale(${sale.id})">🗑️</button>
-                        </td>
-                    </tr>
-                `;
+// In renderSalesTable function, add data-sale-id to the table row and update delete button:
+return `
+    <tr data-sale-id="${sale.id}">
+        <td>${sale.date}</td>
+        ${currentSession.role === 'owner' ? `<td>${sale.userName}</td>` : ''}
+        <td>${sale.productName}</td>
+        <td>${sale.buyerUsername || '-'}</td>
+        <td>${sale.accountEmail || '-'}</td>
+        <td>${accountId}</td>
+        <td>${profileNumber}</td>
+        <td>${slotNumber}</td>
+        <td>${profileName}</td>
+        <td>${soldBy}</td>
+        <td><span class="warranty-badge ${warrantyClass}">${sale.warranty}</span></td>
+        <td><span class="account-type-badge ${accountClass}">${sale.accountType}</span></td>
+        <td>${sale.quantity}</td>
+        <td class="amount-cell">₱${sale.price.toFixed(2)}</td>
+        <td class="amount-cell">₱${sale.totalPrice.toFixed(2)}</td>
+        <td><span class="sold-check">✅</span></td>
+        <td>
+            <button class="action-btn edit-btn" onclick="editSale(${sale.id})">✏️</button>
+            <button class="action-btn delete-btn" onclick="deleteSale(${sale.id}, ${sale.userId})">🗑️</button>
+        </td>
+    </tr>
+`;
             }).join('');
         }
 
