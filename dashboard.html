@@ -3577,7 +3577,6 @@ function loadAllData() {
     populateSoldByDropdown();
 }
 
-// NEW FUNCTION: Fixed sales loading for owner and admin
 function loadAllSalesData() {
     console.log('🔄 Loading sales data...');
     
@@ -4496,51 +4495,47 @@ function deleteSale(saleId, saleUserId = null) {
                 const commissionAmount = (actualProfit * userCommissionPercent) / 100;
                 const ownerProfit = actualProfit - commissionAmount;
                 
-                const newSale = {
-                    id: Date.now(),
-                    userId: soldByUser ? soldByUser.id : currentSession.id,
-                    userName: soldByUser ? soldByUser.customName : currentSession.customName,
-                    productId: productId,
-                    productName: product.name,
-                    accountId: accountId,
-                    profileNumber: parseInt(profileNumber),
-                    slotNumber: slotNumber,
-                    profileName: profileName,
-                    profileType: profileType.value,
-                    soldBy: soldBy,
-                    buyerUsername: document.getElementById('buyerUsernameInput').value,
-                    accountEmail: document.getElementById('accountEmailInput').value,
-                    buyPrice: product.buyPrice,
-                    sellPrice: product.sellPrice,
-                    price: price,
-                    commission: commissionAmount,
-                    ownerProfit: ownerProfit,
-                    warranty: 'NW', // Default for streaming
-                    accountType: profileType.value,
-                    quantity: quantity,
-                    totalPrice: price * quantity,
-                    totalCommission: commissionAmount * quantity,
-                    sold: true,
-                    date: new Date().toISOString().split('T')[0]
-                };
-                
-                const userKey = (soldByUser ? soldByUser.username : currentSession.username).replace(/[.#$/[\]]/g, '_');
-                showSyncingIndicator();
-                getRef('sales/' + userKey + '/' + newSale.id).set(newSale)
-                    .then(() => {
-                        document.getElementById('addSaleForm').reset();
-                        document.getElementById('buyerUsernameInput').value = '';
-                        document.getElementById('accountEmailInput').value = '';
-                        document.getElementById('productDetailsCard').style.display = 'none';
-                        document.getElementById('totalEarningsCard').style.display = 'none';
-                        document.getElementById('profileTrackingFields').style.display = 'none';
-                        document.getElementById('profileStatusDisplay').style.display = 'none';
-                        showToast('✅ Profile slot sold successfully!', 'success');
-                        autoCalculatePayouts();
-                    })
-                    .catch((error) => {
-                        showToast('❌ Error: ' + error.message, 'error');
-                    });
+// In the add sale form submit handler, replace the sale creation part with:
+const newSale = {
+    id: Date.now(),
+    userId: currentSession.id,
+    userName: currentSession.customName,
+    productId: productId,
+    productName: product.name,
+    buyerUsername: document.getElementById('buyerUsernameInput').value,
+    accountEmail: document.getElementById('accountEmailInput').value,
+    warranty: warrantyType.value,
+    accountType: accountType.value,
+    quantity: quantity,
+    price: price,
+    buyPrice: product.buyPrice,
+    sellPrice: product.sellPrice,
+    commission: yourProfit,
+    totalPrice: price * quantity,
+    totalCommission: yourProfit * quantity,
+    sold: true, // Always mark as sold when adding
+    date: new Date().toISOString().split('T')[0],
+    timestamp: Date.now() // Add timestamp for sorting
+};
+
+const userKey = currentSession.username.replace(/[.#$/[\]]/g, '_');
+showSyncingIndicator();
+getRef('sales/' + userKey + '/' + newSale.id).set(newSale)
+    .then(() => {
+        document.getElementById('addSaleForm').reset();
+        document.getElementById('buyerUsernameInput').value = '';
+        document.getElementById('accountEmailInput').value = '';
+        document.getElementById('productDetailsCard').style.display = 'none';
+        document.getElementById('totalEarningsCard').style.display = 'none';
+        showToast('✅ Sale added successfully!', 'success');
+        autoCalculatePayouts();
+        
+        // Force refresh of data
+        loadAllSalesData();
+    })
+    .catch((error) => {
+        showToast('❌ Error: ' + error.message, 'error');
+    });
                 
             } else {
                 // Regular sale (non-streaming)
