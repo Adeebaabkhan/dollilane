@@ -3586,11 +3586,19 @@ function loadAllSalesData() {
             const salesData = snapshot.val() || {};
             sales = [];
             
+            console.log('📊 Raw sales data structure:', Object.keys(salesData));
+            
             Object.keys(salesData).forEach(userKey => {
                 const userSales = salesData[userKey];
+                console.log(`👤 User ${userKey} has sales:`, userSales);
+                
                 if (userSales && typeof userSales === 'object') {
                     Object.keys(userSales).forEach(saleKey => {
                         const sale = userSales[saleKey];
+                        
+                        // Ensure sale has all required properties
+                        sale.id = saleKey;
+                        sale.userKey = userKey; // Store the Firebase user key
                         
                         // Find the user who owns this sale
                         const saleUser = users.find(u => {
@@ -3609,8 +3617,6 @@ function loadAllSalesData() {
                             sale.userRole = 'unknown';
                         }
                         
-                        // Ensure sale has all required properties
-                        sale.id = saleKey; // Use the Firebase key as ID
                         sales.push(sale);
                     });
                 }
@@ -3632,13 +3638,17 @@ function loadAllSalesData() {
     } else {
         // Admin: Load only their own sales
         const userKey = currentSession.username.replace(/[.#$/[\]]/g, '_');
+        console.log('👤 Admin loading sales from path:', 'sales/' + userKey);
+        
         getRef('sales/' + userKey).on('value', (snapshot) => {
             const salesData = snapshot.val() || {};
             sales = [];
             
+            console.log('📊 Admin sales data:', salesData);
+            
             Object.keys(salesData).forEach(saleKey => {
                 const sale = salesData[saleKey];
-                sale.id = saleKey; // Use Firebase key as ID
+                sale.id = saleKey;
                 sale.userName = currentSession.customName;
                 sale.userId = currentSession.id;
                 sale.userRole = currentSession.role;
@@ -4956,24 +4966,51 @@ function editSale(id) {
         }
 
 function getFilteredSales() {
-    const activePeriod = document.querySelector('.period-tab.active').dataset.period;
+    const activePeriod = document.querySelector('.period-tab.active')?.dataset.period || 'all';
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
-    let filtered = [...sales]; // Create a copy of all sales
+    console.log('🔍 Filtering sales for period:', activePeriod);
+    console.log('📊 Total sales before filtering:', sales.length);
     
-    console.log('🔍 Initial sales count:', filtered.length);
+    let filtered = [...sales]; // Create a copy of all sales
     
     // User filtering
     if (currentSession.role === 'owner') {
         const selectedUserId = document.getElementById('userFilter').value;
         if (selectedUserId !== 'all') {
-            filtered = filtered.filter(s => s.userId == selectedUserId); // Use loose equality
+            filtered = filtered.filter(s => s.userId == selectedUserId);
             console.log(`👤 Filtered by user ${selectedUserId}:`, filtered.length);
         }
     } else {
         filtered = filtered.filter(s => s.userId === currentSession.id);
+        console.log(`👤 Admin filtered to own sales:`, filtered.length);
     }
+    
+    // Period filtering
+    if (activePeriod === 'today') {
+        filtered = filtered.filter(s => {
+            if (!s.date) return false;
+            const saleDate = new Date(s.date);
+            saleDate.setHours(0, 0, 0, 0);
+            return saleDate.getTime() === today.getTime();
+        });
+        console.log('📅 After today filter:', filtered.length);
+    } else if (activePeriod === 'week') {
+        const weekAgo = new Date(today);
+        weekAgo.setDate(today.getDate() - 7);
+        filtered = filtered.filter(s => s.date && new Date(s.date) >= weekAgo);
+        console.log('📅 After week filter:', filtered.length);
+    } else if (activePeriod === 'month') {
+        const monthAgo = new Date(today);
+        monthAgo.setMonth(today.getMonth() - 1);
+        filtered = filtered.filter(s => s.date && new Date(s.date) >= monthAgo);
+        console.log('📅 After month filter:', filtered.length);
+    }
+    
+    console.log('✅ Final filtered sales count:', filtered.length);
+    return filtered;
+}
     
     // Period filtering
     if (activePeriod === 'today') {
@@ -5060,85 +5097,125 @@ function calculateStats() {
     console.log('💰 Commission Rate:', bracketRate + '%');
 }
 
-        // =================== RENDER SALES TABLE ===================
-        function renderSalesTable() {
-            const tbody = document.getElementById('salesTableBody');
-            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-            const activeFilter = document.querySelector('.filter-btn.active').id;
+// =================== RENDER SALES TABLE ===================
+function renderSalesTable() {
+    const tbody = document.getElementById('salesTableBody');
+    const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+    const activeFilterElement = document.querySelector('.filter-btn.active');
+    const activeFilter = activeFilterElement ? activeFilterElement.id : 'filterAll';
+    
+    console.log('🔄 Rendering sales table...');
+    console.log('📊 Total sales in memory:', sales.length);
+    console.log('🔍 Active filter:', activeFilter);
+    
+    let filtered = getFilteredSales();
+    console.log('✅ After period/user filtering:', filtered.length);
+    
+    // Apply search filter
+    if (searchTerm) {
+        filtered = filtered.filter(s => {
+            const productMatch = s.productName && s.productName.toLowerCase().includes(searchTerm);
+            const userMatch = s.userName && s.userName.toLowerCase().includes(searchTerm);
+            const warrantyMatch = s.warranty && s.warranty.toLowerCase().includes(searchTerm);
+            const typeMatch = s.accountType && s.accountType.toLowerCase().includes(searchTerm);
+            const buyerMatch = s.buyerUsername && s.buyerUsername.toLowerCase().includes(searchTerm);
+            const emailMatch = s.accountEmail && s.accountEmail.toLowerCase().includes(searchTerm);
             
-            let filtered = getFilteredSales();
-            
-            // Apply search filter
-            if (searchTerm) {
-                filtered = filtered.filter(s => 
-                    s.productName.toLowerCase().includes(searchTerm) ||
-                    s.userName.toLowerCase().includes(searchTerm) ||
-                    s.warranty.toLowerCase().includes(searchTerm) ||
-                    s.accountType.toLowerCase().includes(searchTerm) ||
-                    (s.buyerUsername && s.buyerUsername.toLowerCase().includes(searchTerm)) ||
-                    (s.accountEmail && s.accountEmail.toLowerCase().includes(searchTerm))
-                );
-            }
-            
-            // Apply status filter
-            if (activeFilter === 'filterSold') {
-                filtered = filtered.filter(s => s.sold);
-            }
-            
-            if (filtered.length === 0) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="17">
-                            <div class="empty-state">
-                                <div class="empty-icon">📦</div>
-                                <h3>No sales found</h3>
-                                <p>Try adjusting your filters</p>
-                            </div>
-                        </td>
-                    </tr>
-                `;
-                return;
-            }
-            
-            tbody.innerHTML = filtered.map(sale => {
-                const warrantyClass = sale.warranty === 'FW' ? 'fw' : 'nw';
-                const accountClass = sale.accountType === 'Solo' ? 'solo' : 'shared';
-                const soldIcon = sale.sold ? '✅' : '📦';
-                
-                // Format profile tracking columns
-                const accountId = sale.accountId || '-';
-                const profileNumber = sale.profileNumber ? `Profile ${sale.profileNumber}` : '-';
-                const slotNumber = sale.slotNumber ? `${sale.slotNumber}/${sale.profileType === 'Solo' ? '1' : '2'}` : '-';
-                const profileName = sale.profileName || '-';
-                const soldBy = sale.soldBy || sale.userName || '-';
-                
-// In renderSalesTable() function, update the table row:
-return `
-    <tr data-sale-id="${sale.id}">
-        <td>${sale.date}</td>
-        ${currentSession.role === 'owner' ? `<td>${sale.userName}</td>` : ''}
-        <td>${sale.productName}</td>
-        <td>${sale.buyerUsername || '-'}</td>
-        <td>${sale.accountEmail || '-'}</td>
+            return productMatch || userMatch || warrantyMatch || typeMatch || buyerMatch || emailMatch;
+        });
+        console.log('🔍 After search filtering:', filtered.length);
+    }
+    
+    // Apply status filter
+    if (activeFilter === 'filterSold') {
+        filtered = filtered.filter(s => s.sold === true);
+        console.log('✅ After sold filter:', filtered.length);
+    } else if (activeFilter === 'filterStock') {
+        filtered = filtered.filter(s => s.sold === false);
+        console.log('📦 After stock filter:', filtered.length);
+    }
+    
+    if (filtered.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="17">
+                    <div class="empty-state">
+                        <div class="empty-icon">📦</div>
+                        <h3>No sales found</h3>
+                        <p>Try adjusting your filters or add your first sale!</p>
+                    </div>
+                </td>
+            </tr>
+        `;
+        console.log('❌ No sales to display after filtering');
+        return;
+    }
+    
+    console.log('🎯 Final filtered sales for table:', filtered.length);
+    
+    // Sort by date (newest first)
+    filtered.sort((a, b) => {
+        const dateA = new Date(a.date || a.timestamp || 0);
+        const dateB = new Date(b.date || b.timestamp || 0);
+        return dateB - dateA;
+    });
+    
+    tbody.innerHTML = filtered.map(sale => {
+        // Safe property access with fallbacks
+        const warrantyClass = (sale.warranty === 'FW' ? 'fw' : 'nw') || 'nw';
+        const accountClass = (sale.accountType === 'Solo' ? 'solo' : 'shared') || 'shared';
+        const soldIcon = sale.sold ? '✅' : '📦';
+        
+        // Format profile tracking columns with safe access
+        const accountId = sale.accountId || '-';
+        const profileNumber = sale.profileNumber ? `Profile ${sale.profileNumber}` : '-';
+        const slotNumber = sale.slotNumber ? `${sale.slotNumber}/${sale.profileType === 'Solo' ? '1' : '2'}` : '-';
+        const profileName = sale.profileName || '-';
+        const soldBy = sale.soldBy || sale.userName || '-';
+        const buyerUsername = sale.buyerUsername || '-';
+        const accountEmail = sale.accountEmail || '-';
+        
+        // Ensure numbers are valid
+        const quantity = parseInt(sale.quantity) || 1;
+        const price = parseFloat(sale.price) || 0;
+        const totalPrice = parseFloat(sale.totalPrice) || (price * quantity);
+        const saleDate = sale.date || 'Unknown';
+        const productName = sale.productName || 'Unknown Product';
+        const warranty = sale.warranty || 'NW';
+        const accountType = sale.accountType || 'Shared';
+        
+        // Safe sale ID for onclick events
+        const safeSaleId = typeof sale.id === 'string' ? sale.id : String(sale.id);
+        const safeUserId = sale.userId ? String(sale.userId) : 'unknown';
+        
+        return `
+    <tr data-sale-id="${safeSaleId}">
+        <td>${saleDate}</td>
+        ${currentSession.role === 'owner' ? `<td>${sale.userName || 'Unknown'}</td>` : ''}
+        <td>${productName}</td>
+        <td>${buyerUsername}</td>
+        <td>${accountEmail}</td>
         <td>${accountId}</td>
         <td>${profileNumber}</td>
         <td>${slotNumber}</td>
         <td>${profileName}</td>
         <td>${soldBy}</td>
-        <td><span class="warranty-badge ${warrantyClass}">${sale.warranty}</span></td>
-        <td><span class="account-type-badge ${accountClass}">${sale.accountType}</span></td>
-        <td>${sale.quantity}</td>
-        <td class="amount-cell">₱${sale.price.toFixed(2)}</td>
-        <td class="amount-cell">₱${sale.totalPrice.toFixed(2)}</td>
-        <td><span class="sold-check">✅</span></td>
+        <td><span class="warranty-badge ${warrantyClass}">${warranty}</span></td>
+        <td><span class="account-type-badge ${accountClass}">${accountType}</span></td>
+        <td>${quantity}</td>
+        <td class="amount-cell">₱${price.toFixed(2)}</td>
+        <td class="amount-cell">₱${totalPrice.toFixed(2)}</td>
+        <td><span class="sold-check">${soldIcon}</span></td>
         <td>
-            <button class="action-btn edit-btn" onclick="editSale(${sale.id})">✏️</button>
-            <button class="action-btn delete-btn" onclick="deleteSale('${sale.id}', '${sale.userId}')">🗑️</button>
+            <button class="action-btn edit-btn" onclick="editSale('${safeSaleId}')">✏️</button>
+            <button class="action-btn delete-btn" onclick="deleteSale('${safeSaleId}', '${safeUserId}')">🗑️</button>
         </td>
     </tr>
 `;
-            }).join('');
-        }
+    }).join('');
+    
+    console.log('✅ Table successfully rendered with', filtered.length, 'rows');
+}
 
         // =================== CHARTS ===================
         let salesChart, revenueChart;
