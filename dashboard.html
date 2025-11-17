@@ -3586,25 +3586,35 @@ function loadAllSalesData() {
             const salesData = snapshot.val() || {};
             sales = [];
             
+            console.log('📊 Raw sales data structure:', Object.keys(salesData));
+            
             Object.keys(salesData).forEach(userKey => {
                 const userSales = salesData[userKey];
+                console.log(`👤 User ${userKey} has sales:`, userSales);
+                
                 if (userSales && typeof userSales === 'object') {
-                    Object.values(userSales).forEach(sale => {
-                        // Add user info to each sale for owner's view
+                    Object.keys(userSales).forEach(saleKey => {
+                        const sale = userSales[saleKey];
+                        
+                        // Ensure sale has all required properties
+                        sale.id = saleKey;
+                        sale.userKey = userKey; // Store the Firebase user key
+                        
+                        // Find the user who owns this sale
                         const saleUser = users.find(u => {
                             const safeUsername = u.username.replace(/[.#$/[\]]/g, '_');
                             return safeUsername === userKey;
                         });
                         
                         if (saleUser) {
-                            sale.userName = saleUser.customName;
+                            sale.userName = saleUser.customName || saleUser.username;
                             sale.userId = saleUser.id;
                             sale.userRole = saleUser.role;
                         } else {
-                            // Fallback: try to extract from sale data or use userKey
-                            sale.userName = sale.userName || userKey;
-                            sale.userId = sale.userId || 'unknown';
-                            sale.userRole = sale.userRole || 'unknown';
+                            // Fallback: use the userKey as username
+                            sale.userName = userKey;
+                            sale.userId = userKey;
+                            sale.userRole = 'unknown';
                         }
                         
                         sales.push(sale);
@@ -3613,6 +3623,14 @@ function loadAllSalesData() {
             });
             
             console.log('✅ Owner loaded all sales:', sales.length);
+            
+            // Debug: Show sales distribution
+            const userSalesCount = {};
+            sales.forEach(sale => {
+                userSalesCount[sale.userName] = (userSalesCount[sale.userName] || 0) + 1;
+            });
+            console.log('📊 Sales distribution:', userSalesCount);
+            
             calculateStats();
             renderSalesTable();
             updateCharts();
@@ -3620,15 +3638,21 @@ function loadAllSalesData() {
     } else {
         // Admin: Load only their own sales
         const userKey = currentSession.username.replace(/[.#$/[\]]/g, '_');
+        console.log('👤 Admin loading sales from path:', 'sales/' + userKey);
+        
         getRef('sales/' + userKey).on('value', (snapshot) => {
             const salesData = snapshot.val() || {};
-            sales = Object.values(salesData);
+            sales = [];
             
-            // Add user info to each sale
-            sales.forEach(sale => {
+            console.log('📊 Admin sales data:', salesData);
+            
+            Object.keys(salesData).forEach(saleKey => {
+                const sale = salesData[saleKey];
+                sale.id = saleKey;
                 sale.userName = currentSession.customName;
                 sale.userId = currentSession.id;
                 sale.userRole = currentSession.role;
+                sales.push(sale);
             });
             
             console.log('✅ Admin loaded sales:', sales.length);
@@ -4205,12 +4229,13 @@ function deleteSale(saleId, saleUserId = null) {
     
     // Determine the correct Firebase path
     let saleRef;
-    
+    let userKey;
+
     if (currentSession.role === 'owner' && saleUserId && saleUserId !== currentSession.id) {
         // Owner deleting admin sale - find admin's username
         const adminUser = users.find(u => u.id === saleUserId);
         if (adminUser) {
-            const userKey = adminUser.username.replace(/[.#$/[\]]/g, '_');
+            userKey = adminUser.username.replace(/[.#$/[\]]/g, '_');
             saleRef = getRef(`sales/${userKey}/${saleId}`);
             console.log('👑 Owner deleting admin sale, path:', `sales/${userKey}/${saleId}`);
         } else {
@@ -4219,11 +4244,12 @@ function deleteSale(saleId, saleUserId = null) {
         }
     } else {
         // Regular deletion (own sales)
-        const userKey = currentSession.username.replace(/[.#$/[\]]/g, '_');
+        userKey = currentSession.username.replace(/[.#$/[\]]/g, '_');
         saleRef = getRef(`sales/${userKey}/${saleId}`);
         console.log('👤 Deleting own sale, path:', `sales/${userKey}/${saleId}`);
     }
     
+    // First, check if sale exists and get its data
     saleRef.once('value').then((snapshot) => {
         const sale = snapshot.val();
         if (!sale) {
@@ -4257,7 +4283,7 @@ function deleteSale(saleId, saleUserId = null) {
         } 
         else {
             // ✅ USER: Can delete their own sales ONLY
-            canSalelete = (saleCreatorId === currentUserId);
+            canDelete = (saleCreatorId === currentUserId);
             console.log('👤 User permission:', canDelete);
         }
 
@@ -4291,6 +4317,10 @@ function deleteSale(saleId, saleUserId = null) {
                     console.log('🔄 Row not found, refreshing table...');
                     renderSalesTable(); // Refresh entire table
                 }
+                
+                // Also remove from local sales array to keep sync
+                sales = sales.filter(s => s.id !== saleId);
+                calculateStats(); // Update stats
             })
             .catch((error) => {
                 console.error('❌ Firebase error:', error);
@@ -4935,91 +4965,110 @@ function editSale(id) {
             updateCharts();
         }
 
-        function getFilteredSales() {
-            const activePeriod = document.querySelector('.period-tab.active').dataset.period;
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            
-            let filtered = sales;
-            
-            if (currentSession.role === 'admin') {
-                filtered = filtered.filter(s => s.userId === currentSession.id);
-            } else {
-                const selectedUserId = document.getElementById('userFilter').value;
-                if (selectedUserId !== 'all') {
-                    filtered = filtered.filter(s => s.userId === parseInt(selectedUserId));
-                }
-            }
-            
-            if (activePeriod === 'today') {
-                filtered = filtered.filter(s => {
-                    const saleDate = new Date(s.date);
-                    saleDate.setHours(0, 0, 0, 0);
-                    return saleDate.getTime() === today.getTime();
-                });
-            } else if (activePeriod === 'week') {
-                const weekAgo = new Date(today);
-                weekAgo.setDate(today.getDate() - 7);
-                filtered = filtered.filter(s => new Date(s.date) >= weekAgo);
-            } else if (activePeriod === 'month') {
-                const monthAgo = new Date(today);
-                monthAgo.setMonth(today.getMonth() - 1);
-                filtered = filtered.filter(s => new Date(s.date) >= monthAgo);
-            }
-            
-            return filtered;
+function getFilteredSales() {
+    const activePeriod = document.querySelector('.period-tab.active').dataset.period;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    let filtered = [...sales]; // Create a copy of all sales
+    
+    console.log('🔍 Initial sales count:', filtered.length);
+    
+    // User filtering
+    if (currentSession.role === 'owner') {
+        const selectedUserId = document.getElementById('userFilter').value;
+        if (selectedUserId !== 'all') {
+            filtered = filtered.filter(s => s.userId == selectedUserId); // Use loose equality
+            console.log(`👤 Filtered by user ${selectedUserId}:`, filtered.length);
         }
+    } else {
+        filtered = filtered.filter(s => s.userId === currentSession.id);
+    }
+    
+    // Period filtering
+    if (activePeriod === 'today') {
+        filtered = filtered.filter(s => {
+            const saleDate = new Date(s.date);
+            saleDate.setHours(0, 0, 0, 0);
+            return saleDate.getTime() === today.getTime();
+        });
+    } else if (activePeriod === 'week') {
+        const weekAgo = new Date(today);
+        weekAgo.setDate(today.getDate() - 7);
+        filtered = filtered.filter(s => new Date(s.date) >= weekAgo);
+    } else if (activePeriod === 'month') {
+        const monthAgo = new Date(today);
+        monthAgo.setMonth(today.getMonth() - 1);
+        filtered = filtered.filter(s => new Date(s.date) >= monthAgo);
+    }
+    
+    console.log('✅ Final filtered sales:', filtered.length);
+    return filtered;
+}
 
-        function calculateStats() {
-            const filtered = getFilteredSales();
-            
-            // Calculate all metrics in a single pass for better performance
-            const stats = filtered.reduce((acc, s) => {
-                acc.totalSales += (s.totalPrice || 0);
-                acc.totalProducts += s.quantity;
-                
-                if (s.sold) {
-                    acc.soldCount += s.quantity;
-                    // Calculate total capital (buy prices) for sold items
-                    acc.totalCapital += ((s.buyPrice || 0) * s.quantity);
-                    // Calculate business profit (Sell Price - Buy Price) for sold items
-                    acc.totalProfit += ((s.price || 0) - (s.buyPrice || 0)) * s.quantity;
-                }
-                
-                return acc;
-            }, {
-                totalSales: 0,
-                totalCapital: 0,
-                totalProducts: 0,
-                soldCount: 0,
-                totalProfit: 0
-            });
-            
-            // Calculate Total Salary using total profit bracket method
-            // IMPORTANT: This applies ONE bracket rate to the total profit (not per-item calculation)
-            // Formula: Total Salary = Total Profit × Bracket Rate (%)
-            // Example: If Total Profit = ₱4,000 and bracket rate is 20%, then Total Salary = ₱800
-            const bracketRate = getCommissionRateForProfit(stats.totalProfit, currentSession.id);
-            const totalSalary = (stats.totalProfit * bracketRate) / 100;
-            
-            // Calculate average sale value
-            const avgSaleValue = stats.soldCount > 0 ? stats.totalSales / stats.soldCount : 0;
-            
-            const adminCount = users.filter(u => u.role === 'admin').length;
-            
-            document.getElementById('totalSales').textContent = '₱' + stats.totalSales.toFixed(2);
-            document.getElementById('totalCapital').textContent = '₱' + stats.totalCapital.toFixed(2);
-            document.getElementById('totalProducts').textContent = stats.totalProducts;
-            document.getElementById('soldCount').textContent = stats.soldCount;
-            document.getElementById('totalProfit').textContent = '₱' + stats.totalProfit.toFixed(2);
-            document.getElementById('totalSalary').textContent = '₱' + totalSalary.toFixed(2);
-            document.getElementById('avgSaleValue').textContent = '₱' + avgSaleValue.toFixed(2);
-            document.getElementById('adminCount').textContent = adminCount;
-        }
+function calculateStats() {
+    const filtered = getFilteredSales();
+    
+    console.log('📊 Calculating stats for', filtered.length, 'sales');
+    
+    // Initialize stats with proper defaults
+    const stats = {
+        totalSales: 0,
+        totalCapital: 0,
+        totalProducts: 0,
+        soldCount: 0,
+        totalProfit: 0,
+        totalSalary: 0
+    };
 
-        function updateStats() {
-            calculateStats();
+    // Calculate all metrics in a single pass
+    filtered.forEach(sale => {
+        // Ensure we have valid numbers
+        const quantity = parseInt(sale.quantity) || 1;
+        const price = parseFloat(sale.price) || 0;
+        const buyPrice = parseFloat(sale.buyPrice) || 0;
+        const sellPrice = parseFloat(sale.sellPrice) || price; // Fallback to price if sellPrice missing
+        
+        // Always add to total sales (price customer paid)
+        stats.totalSales += (price * quantity);
+        stats.totalProducts += quantity;
+        
+        if (sale.sold) {
+            stats.soldCount += quantity;
+            
+            // Calculate capital (your cost) - use buyPrice if available, otherwise estimate
+            const actualBuyPrice = buyPrice > 0 ? buyPrice : (sellPrice * 0.7); // Estimate 70% if buyPrice missing
+            stats.totalCapital += (actualBuyPrice * quantity);
+            
+            // Calculate business profit (Sell Price - Buy Price)
+            const profitPerUnit = sellPrice - actualBuyPrice;
+            stats.totalProfit += (profitPerUnit * quantity);
         }
+    });
+
+    // Calculate Total Salary using bracket system
+    const bracketRate = getCommissionRateForProfit(stats.totalProfit, currentSession.id);
+    stats.totalSalary = (stats.totalProfit * bracketRate) / 100;
+
+    // Calculate average sale value
+    const avgSaleValue = stats.soldCount > 0 ? stats.totalSales / stats.soldCount : 0;
+    
+    const adminCount = users.filter(u => u.role === 'admin').length;
+    
+    // Update UI with proper formatting
+    document.getElementById('totalSales').textContent = '₱' + stats.totalSales.toFixed(2);
+    document.getElementById('totalCapital').textContent = '₱' + stats.totalCapital.toFixed(2);
+    document.getElementById('totalProducts').textContent = stats.totalProducts;
+    document.getElementById('soldCount').textContent = stats.soldCount;
+    document.getElementById('totalProfit').textContent = '₱' + stats.totalProfit.toFixed(2);
+    document.getElementById('totalSalary').textContent = '₱' + stats.totalSalary.toFixed(2);
+    document.getElementById('avgSaleValue').textContent = '₱' + avgSaleValue.toFixed(2);
+    document.getElementById('adminCount').textContent = adminCount;
+
+    // Debug output
+    console.log('📈 Final Stats:', stats);
+    console.log('💰 Commission Rate:', bracketRate + '%');
+}
 
         // =================== RENDER SALES TABLE ===================
         function renderSalesTable() {
@@ -5073,7 +5122,7 @@ function editSale(id) {
                 const profileName = sale.profileName || '-';
                 const soldBy = sale.soldBy || sale.userName || '-';
                 
-// In renderSalesTable function, add data-sale-id to the table row and update delete button:
+// In renderSalesTable() function, update the table row:
 return `
     <tr data-sale-id="${sale.id}">
         <td>${sale.date}</td>
@@ -5094,7 +5143,7 @@ return `
         <td><span class="sold-check">✅</span></td>
         <td>
             <button class="action-btn edit-btn" onclick="editSale(${sale.id})">✏️</button>
-            <button class="action-btn delete-btn" onclick="deleteSale(${sale.id}, ${sale.userId})">🗑️</button>
+            <button class="action-btn delete-btn" onclick="deleteSale('${sale.id}', '${sale.userId}')">🗑️</button>
         </td>
     </tr>
 `;
@@ -5663,22 +5712,28 @@ document.getElementById('addSaleForm').addEventListener('submit', function(e) {
             showSyncingIndicator();
             getRef('subscriptionProducts/' + subProduct.id).set(subProduct)
                 .then(() => {
-                    const newSale = {
-                        id: Date.now(),
-                        productName: subProduct.name + ` (Profile ${selectedProfile})`,
-                        buyerUsername: document.getElementById('buyerUsernameInput').value,
-                        accountEmail: document.getElementById('accountEmailInput').value,
-                        warrantyType: 'N/A',
-                        accountType: 'Profile',
-                        quantity: 1,
-                        price: subProduct.soloPrice,
-                        commission: 0,
-                        totalPrice: subProduct.soloPrice,
-                        totalCommission: 0,
-                        sold: true,
-                        date: new Date().toISOString().split('T')[0],
-                        soldBy: currentUsername
-                    };
+// In your add sale form submission, ensure the sale object has:
+const newSale = {
+    id: Date.now(),
+    userId: currentSession.id,
+    userName: currentSession.customName,
+    productId: productId,
+    productName: product.name,
+    buyerUsername: document.getElementById('buyerUsernameInput').value,
+    accountEmail: document.getElementById('accountEmailInput').value,
+    warranty: warrantyType.value,
+    accountType: accountType.value,
+    quantity: quantity,
+    price: price,
+    buyPrice: product.buyPrice, // ← MAKE SURE THIS IS INCLUDED
+    sellPrice: product.sellPrice, // ← AND THIS TOO
+    commission: yourProfit,
+    totalPrice: price * quantity,
+    totalCommission: yourProfit * quantity,
+    sold: true,
+    date: new Date().toISOString().split('T')[0],
+    timestamp: Date.now()
+};
                     
                     const userKey = currentUsername.replace(/[.#$[\]]/g, '_');
                     return getRef('sales/' + userKey + '/' + newSale.id).set(newSale);
