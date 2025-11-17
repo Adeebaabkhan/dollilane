@@ -4996,56 +4996,69 @@ function getFilteredSales() {
     return filtered;
 }
 
-        function calculateStats() {
-            const filtered = getFilteredSales();
-            
-            // Calculate all metrics in a single pass for better performance
-            const stats = filtered.reduce((acc, s) => {
-                acc.totalSales += (s.totalPrice || 0);
-                acc.totalProducts += s.quantity;
-                
-                if (s.sold) {
-                    acc.soldCount += s.quantity;
-                    // Calculate total capital (buy prices) for sold items
-                    acc.totalCapital += ((s.buyPrice || 0) * s.quantity);
-                    // Calculate business profit (Sell Price - Buy Price) for sold items
-                    acc.totalProfit += ((s.price || 0) - (s.buyPrice || 0)) * s.quantity;
-                }
-                
-                return acc;
-            }, {
-                totalSales: 0,
-                totalCapital: 0,
-                totalProducts: 0,
-                soldCount: 0,
-                totalProfit: 0
-            });
-            
-            // Calculate Total Salary using total profit bracket method
-            // IMPORTANT: This applies ONE bracket rate to the total profit (not per-item calculation)
-            // Formula: Total Salary = Total Profit × Bracket Rate (%)
-            // Example: If Total Profit = ₱4,000 and bracket rate is 20%, then Total Salary = ₱800
-            const bracketRate = getCommissionRateForProfit(stats.totalProfit, currentSession.id);
-            const totalSalary = (stats.totalProfit * bracketRate) / 100;
-            
-            // Calculate average sale value
-            const avgSaleValue = stats.soldCount > 0 ? stats.totalSales / stats.soldCount : 0;
-            
-            const adminCount = users.filter(u => u.role === 'admin').length;
-            
-            document.getElementById('totalSales').textContent = '₱' + stats.totalSales.toFixed(2);
-            document.getElementById('totalCapital').textContent = '₱' + stats.totalCapital.toFixed(2);
-            document.getElementById('totalProducts').textContent = stats.totalProducts;
-            document.getElementById('soldCount').textContent = stats.soldCount;
-            document.getElementById('totalProfit').textContent = '₱' + stats.totalProfit.toFixed(2);
-            document.getElementById('totalSalary').textContent = '₱' + totalSalary.toFixed(2);
-            document.getElementById('avgSaleValue').textContent = '₱' + avgSaleValue.toFixed(2);
-            document.getElementById('adminCount').textContent = adminCount;
-        }
+function calculateStats() {
+    const filtered = getFilteredSales();
+    
+    console.log('📊 Calculating stats for', filtered.length, 'sales');
+    
+    // Initialize stats with proper defaults
+    const stats = {
+        totalSales: 0,
+        totalCapital: 0,
+        totalProducts: 0,
+        soldCount: 0,
+        totalProfit: 0,
+        totalSalary: 0
+    };
 
-        function updateStats() {
-            calculateStats();
+    // Calculate all metrics in a single pass
+    filtered.forEach(sale => {
+        // Ensure we have valid numbers
+        const quantity = parseInt(sale.quantity) || 1;
+        const price = parseFloat(sale.price) || 0;
+        const buyPrice = parseFloat(sale.buyPrice) || 0;
+        const sellPrice = parseFloat(sale.sellPrice) || price; // Fallback to price if sellPrice missing
+        
+        // Always add to total sales (price customer paid)
+        stats.totalSales += (price * quantity);
+        stats.totalProducts += quantity;
+        
+        if (sale.sold) {
+            stats.soldCount += quantity;
+            
+            // Calculate capital (your cost) - use buyPrice if available, otherwise estimate
+            const actualBuyPrice = buyPrice > 0 ? buyPrice : (sellPrice * 0.7); // Estimate 70% if buyPrice missing
+            stats.totalCapital += (actualBuyPrice * quantity);
+            
+            // Calculate business profit (Sell Price - Buy Price)
+            const profitPerUnit = sellPrice - actualBuyPrice;
+            stats.totalProfit += (profitPerUnit * quantity);
         }
+    });
+
+    // Calculate Total Salary using bracket system
+    const bracketRate = getCommissionRateForProfit(stats.totalProfit, currentSession.id);
+    stats.totalSalary = (stats.totalProfit * bracketRate) / 100;
+
+    // Calculate average sale value
+    const avgSaleValue = stats.soldCount > 0 ? stats.totalSales / stats.soldCount : 0;
+    
+    const adminCount = users.filter(u => u.role === 'admin').length;
+    
+    // Update UI with proper formatting
+    document.getElementById('totalSales').textContent = '₱' + stats.totalSales.toFixed(2);
+    document.getElementById('totalCapital').textContent = '₱' + stats.totalCapital.toFixed(2);
+    document.getElementById('totalProducts').textContent = stats.totalProducts;
+    document.getElementById('soldCount').textContent = stats.soldCount;
+    document.getElementById('totalProfit').textContent = '₱' + stats.totalProfit.toFixed(2);
+    document.getElementById('totalSalary').textContent = '₱' + stats.totalSalary.toFixed(2);
+    document.getElementById('avgSaleValue').textContent = '₱' + avgSaleValue.toFixed(2);
+    document.getElementById('adminCount').textContent = adminCount;
+
+    // Debug output
+    console.log('📈 Final Stats:', stats);
+    console.log('💰 Commission Rate:', bracketRate + '%');
+}
 
         // =================== RENDER SALES TABLE ===================
         function renderSalesTable() {
@@ -5689,22 +5702,28 @@ document.getElementById('addSaleForm').addEventListener('submit', function(e) {
             showSyncingIndicator();
             getRef('subscriptionProducts/' + subProduct.id).set(subProduct)
                 .then(() => {
-                    const newSale = {
-                        id: Date.now(),
-                        productName: subProduct.name + ` (Profile ${selectedProfile})`,
-                        buyerUsername: document.getElementById('buyerUsernameInput').value,
-                        accountEmail: document.getElementById('accountEmailInput').value,
-                        warrantyType: 'N/A',
-                        accountType: 'Profile',
-                        quantity: 1,
-                        price: subProduct.soloPrice,
-                        commission: 0,
-                        totalPrice: subProduct.soloPrice,
-                        totalCommission: 0,
-                        sold: true,
-                        date: new Date().toISOString().split('T')[0],
-                        soldBy: currentUsername
-                    };
+// In your add sale form submission, ensure the sale object has:
+const newSale = {
+    id: Date.now(),
+    userId: currentSession.id,
+    userName: currentSession.customName,
+    productId: productId,
+    productName: product.name,
+    buyerUsername: document.getElementById('buyerUsernameInput').value,
+    accountEmail: document.getElementById('accountEmailInput').value,
+    warranty: warrantyType.value,
+    accountType: accountType.value,
+    quantity: quantity,
+    price: price,
+    buyPrice: product.buyPrice, // ← MAKE SURE THIS IS INCLUDED
+    sellPrice: product.sellPrice, // ← AND THIS TOO
+    commission: yourProfit,
+    totalPrice: price * quantity,
+    totalCommission: yourProfit * quantity,
+    sold: true,
+    date: new Date().toISOString().split('T')[0],
+    timestamp: Date.now()
+};
                     
                     const userKey = currentUsername.replace(/[.#$[\]]/g, '_');
                     return getRef('sales/' + userKey + '/' + newSale.id).set(newSale);
