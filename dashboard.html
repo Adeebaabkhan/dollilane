@@ -3513,70 +3513,6 @@ function loadAllData() {
             renderUserList();
         }
         
-        // Load sales AFTER users are loaded (so we can match user info)
-        loadAllSalesData();
-    });
-    
-    // Load products
-    getRef('products').on('value', (snapshot) => {
-        const productsData = snapshot.val() || {};
-        products = Object.values(productsData);
-        console.log('✅ Loaded products:', products.length);
-        updateProductDropdown();
-        // Both owners and admins can view products
-        if (currentSession.role === 'owner' || currentSession.role === 'admin') {
-            renderProductList();
-        }
-    });
-
-    // Load subscription products
-    getRef('subscriptionProducts').on('value', (snapshot) => {
-        const subProductsData = snapshot.val() || {};
-        subscriptionProducts = Object.values(subProductsData);
-        console.log('📺 Loaded subscription products:', subscriptionProducts.length);
-        renderSubscriptionProducts();
-        updateProductDropdown();
-    });
-    
-    // Load payouts
-    getRef('payouts').on('value', (snapshot) => {
-        const payData = snapshot.val() || {};
-        payouts = Object.values(payData);
-        renderPayoutList();
-        autoCalculatePayouts();
-    });
-
-    // Load accounts (for profile tracking)
-    getRef('accounts').on('value', (snapshot) => {
-        const accountsData = snapshot.val() || {};
-        accounts = Object.values(accountsData);
-        console.log('🎬 Loaded accounts:', accounts.length);
-        populateAccountDropdown();
-        if (currentSession.role === 'owner') {
-            renderInventoryDashboard();
-        }
-    });
-
-    // Load settings with real-time sync
-    getRef('settings/' + currentUsername).on('value', (snapshot) => {
-        if (snapshot.exists()) {
-            const newSettings = snapshot.val();
-            // Only update and apply if settings actually changed
-            if (JSON.stringify(settings) !== JSON.stringify(newSettings)) {
-                console.log('⚙️ Settings updated in real-time');
-                settings = newSettings;
-                applySettings();
-            }
-        } else {
-            // Use default settings if none exist
-            applySettings();
-        }
-    });
-    
-    // Populate Sold By dropdown with real admin names
-    populateSoldByDropdown();
-}
-
 function loadAllSalesData() {
     console.log('🔄 Loading sales data...');
     
@@ -3598,12 +3534,13 @@ function loadAllSalesData() {
                         
                         // Ensure sale has all required properties
                         sale.id = saleKey;
-                        sale.userKey = userKey; // Store the Firebase user key
+                        sale.userKey = userKey;
                         
                         // Find the user who owns this sale
                         const saleUser = users.find(u => {
+                            // Try multiple ways to match the user
                             const safeUsername = u.username.replace(/[.#$/[\]]/g, '_');
-                            return safeUsername === userKey;
+                            return safeUsername === userKey || u.id === sale.userId || u.customName === sale.userName;
                         });
                         
                         if (saleUser) {
@@ -3635,6 +3572,33 @@ function loadAllSalesData() {
             renderSalesTable();
             updateCharts();
         });
+    } else {
+        // Admin: Load only their own sales
+        const userKey = currentSession.username.replace(/[.#$/[\]]/g, '_');
+        console.log('👤 Admin loading sales from path:', 'sales/' + userKey);
+        
+        getRef('sales/' + userKey).on('value', (snapshot) => {
+            const salesData = snapshot.val() || {};
+            sales = [];
+            
+            console.log('📊 Admin sales data:', salesData);
+            
+            Object.keys(salesData).forEach(saleKey => {
+                const sale = salesData[saleKey];
+                sale.id = saleKey;
+                sale.userName = currentSession.customName;
+                sale.userId = currentSession.id;
+                sale.userRole = currentSession.role;
+                sales.push(sale);
+            });
+            
+            console.log('✅ Admin loaded sales:', sales.length);
+            calculateStats();
+            renderSalesTable();
+            updateCharts();
+        });
+    }
+}
     } else {
         // Admin: Load only their own sales
         const userKey = currentSession.username.replace(/[.#$/[\]]/g, '_');
@@ -5070,85 +5034,83 @@ function calculateStats() {
     console.log('💰 Commission Rate:', bracketRate + '%');
 }
 
-        // =================== RENDER SALES TABLE ===================
-        function renderSalesTable() {
-            const tbody = document.getElementById('salesTableBody');
-            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-            const activeFilter = document.querySelector('.filter-btn.active').id;
-            
-            let filtered = getFilteredSales();
-            
-            // Apply search filter
-            if (searchTerm) {
-                filtered = filtered.filter(s => 
-                    s.productName.toLowerCase().includes(searchTerm) ||
-                    s.userName.toLowerCase().includes(searchTerm) ||
-                    s.warranty.toLowerCase().includes(searchTerm) ||
-                    s.accountType.toLowerCase().includes(searchTerm) ||
-                    (s.buyerUsername && s.buyerUsername.toLowerCase().includes(searchTerm)) ||
-                    (s.accountEmail && s.accountEmail.toLowerCase().includes(searchTerm))
-                );
-            }
-            
-            // Apply status filter
-            if (activeFilter === 'filterSold') {
-                filtered = filtered.filter(s => s.sold);
-            }
-            
-            if (filtered.length === 0) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="17">
-                            <div class="empty-state">
-                                <div class="empty-icon">📦</div>
-                                <h3>No sales found</h3>
-                                <p>Try adjusting your filters</p>
-                            </div>
-                        </td>
-                    </tr>
-                `;
-                return;
-            }
-            
-            tbody.innerHTML = filtered.map(sale => {
-                const warrantyClass = sale.warranty === 'FW' ? 'fw' : 'nw';
-                const accountClass = sale.accountType === 'Solo' ? 'solo' : 'shared';
-                const soldIcon = sale.sold ? '✅' : '📦';
-                
-                // Format profile tracking columns
-                const accountId = sale.accountId || '-';
-                const profileNumber = sale.profileNumber ? `Profile ${sale.profileNumber}` : '-';
-                const slotNumber = sale.slotNumber ? `${sale.slotNumber}/${sale.profileType === 'Solo' ? '1' : '2'}` : '-';
-                const profileName = sale.profileName || '-';
-                const soldBy = sale.soldBy || sale.userName || '-';
-                
-// In renderSalesTable() function, update the table row:
-return `
-    <tr data-sale-id="${sale.id}">
-        <td>${sale.date}</td>
-        ${currentSession.role === 'owner' ? `<td>${sale.userName}</td>` : ''}
-        <td>${sale.productName}</td>
-        <td>${sale.buyerUsername || '-'}</td>
-        <td>${sale.accountEmail || '-'}</td>
-        <td>${accountId}</td>
-        <td>${profileNumber}</td>
-        <td>${slotNumber}</td>
-        <td>${profileName}</td>
-        <td>${soldBy}</td>
-        <td><span class="warranty-badge ${warrantyClass}">${sale.warranty}</span></td>
-        <td><span class="account-type-badge ${accountClass}">${sale.accountType}</span></td>
-        <td>${sale.quantity}</td>
-        <td class="amount-cell">₱${sale.price.toFixed(2)}</td>
-        <td class="amount-cell">₱${sale.totalPrice.toFixed(2)}</td>
-        <td><span class="sold-check">✅</span></td>
-        <td>
-            <button class="action-btn edit-btn" onclick="editSale(${sale.id})">✏️</button>
-            <button class="action-btn delete-btn" onclick="deleteSale('${sale.id}', '${sale.userId}')">🗑️</button>
-        </td>
-    </tr>
-`;
-            }).join('');
-        }
+function renderSalesTable() {
+    const tbody = document.getElementById('salesTableBody');
+    const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+    const activeFilter = document.querySelector('.filter-btn.active').id;
+    
+    let filtered = getFilteredSales();
+    
+    // Apply search filter
+    if (searchTerm) {
+        filtered = filtered.filter(s => 
+            s.productName.toLowerCase().includes(searchTerm) ||
+            s.userName.toLowerCase().includes(searchTerm) ||
+            s.warranty.toLowerCase().includes(searchTerm) ||
+            s.accountType.toLowerCase().includes(searchTerm) ||
+            (s.buyerUsername && s.buyerUsername.toLowerCase().includes(searchTerm)) ||
+            (s.accountEmail && s.accountEmail.toLowerCase().includes(searchTerm))
+        );
+    }
+    
+    // Apply status filter
+    if (activeFilter === 'filterSold') {
+        filtered = filtered.filter(s => s.sold);
+    }
+    
+    if (filtered.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="17">
+                    <div class="empty-state">
+                        <div class="empty-icon">📦</div>
+                        <h3>No sales found</h3>
+                        <p>Try adjusting your filters</p>
+                    </div>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    tbody.innerHTML = filtered.map(sale => {
+        const warrantyClass = sale.warranty === 'FW' ? 'fw' : 'nw';
+        const accountClass = sale.accountType === 'Solo' ? 'solo' : 'shared';
+        const soldIcon = sale.sold ? '✅' : '📦';
+        
+        // Format profile tracking columns
+        const accountId = sale.accountId || '-';
+        const profileNumber = sale.profileNumber ? `Profile ${sale.profileNumber}` : '-';
+        const slotNumber = sale.slotNumber ? `${sale.slotNumber}/${sale.profileType === 'Solo' ? '1' : '2'}` : '-';
+        const profileName = sale.profileName || '-';
+        const soldBy = sale.soldBy || sale.userName || '-';
+        
+        return `
+            <tr data-sale-id="${sale.id}">
+                <td>${sale.date}</td>
+                ${currentSession.role === 'owner' ? `<td>${sale.userName}</td>` : ''}
+                <td>${sale.productName}</td>
+                <td>${sale.buyerUsername || '-'}</td>
+                <td>${sale.accountEmail || '-'}</td>
+                <td>${accountId}</td>
+                <td>${profileNumber}</td>
+                <td>${slotNumber}</td>
+                <td>${profileName}</td>
+                <td>${soldBy}</td>
+                <td><span class="warranty-badge ${warrantyClass}">${sale.warranty}</span></td>
+                <td><span class="account-type-badge ${accountClass}">${sale.accountType}</span></td>
+                <td>${sale.quantity}</td>
+                <td class="amount-cell">₱${sale.price.toFixed(2)}</td>
+                <td class="amount-cell">₱${sale.totalPrice.toFixed(2)}</td>
+                <td><span class="sold-check">${soldIcon}</span></td>
+                <td>
+                    <button class="action-btn edit-btn" onclick="editSale(${sale.id})">✏️</button>
+                    <button class="action-btn delete-btn" onclick="deleteSale('${sale.id}', '${sale.userId}')">🗑️</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
 
         // =================== CHARTS ===================
         let salesChart, revenueChart;
