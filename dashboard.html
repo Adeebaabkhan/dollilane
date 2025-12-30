@@ -4678,6 +4678,33 @@ function deleteSale(saleId) {
             showToast('❌ Error deleting sale: ' + error.message, 'error');
         });
 }
+
+// Delete Product (owner only)
+function deleteProduct(productId) {
+    if (currentSession.role !== 'owner') {
+        showToast('❌ Only the owner can delete products', 'error');
+        return;
+    }
+
+    const product = findProductById(productId);
+    const productLabel = product ? product.name : 'this product';
+
+    if (!confirm(`🗑️ Delete ${productLabel}?`)) {
+        return;
+    }
+
+    showSyncingIndicator();
+    getRef('products/' + productId).remove()
+        .then(() => {
+            products = products.filter(p => String(p.id) !== String(productId));
+            renderProductList();
+            updateProductDropdown();
+            showToast('🗑️ Product deleted', 'success');
+        })
+        .catch((error) => {
+            showToast('❌ Error deleting product: ' + error.message, 'error');
+        });
+}
         // Edit Product
         function editProduct(productId) {
             // Pricing controls are owner-only
