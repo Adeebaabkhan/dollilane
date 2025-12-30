@@ -3551,8 +3551,8 @@ function deleteSubscriptionProduct(productId) {
 }
 
 function editSubscriptionProduct(productId) {
-    if (currentSession.role !== 'owner') {
-        showToast('❌ Only owner can edit subscription prices', 'error');
+    if (currentSession.role !== 'owner' && currentSession.role !== 'admin') {
+        showToast('❌ Only admins and owners can edit subscription prices', 'error');
         return;
     }
 
@@ -3576,6 +3576,11 @@ function closeEditSubscriptionModal() {
 
 function saveSubscriptionEdit(event) {
     event.preventDefault();
+
+    if (currentSession.role !== 'owner' && currentSession.role !== 'admin') {
+        showToast('❌ Only admins and owners can edit subscription prices', 'error');
+        return;
+    }
 
     const productId = document.getElementById('editSubProductId').value;
     const name = document.getElementById('editSubProductName').value.trim();
@@ -3608,6 +3613,13 @@ function saveSubscriptionEdit(event) {
         .then(() => {
             closeEditSubscriptionModal();
             showToast('✅ Subscription product updated!', 'success');
+            // Keep the local list in sync immediately for the Manage Products view
+            subscriptionProducts = subscriptionProducts.map(p => {
+                if (String(p.id) === String(productId)) {
+                    return { ...p, ...updatedProduct };
+                }
+                return p;
+            });
             renderSubscriptionProducts();
         })
         .catch((error) => showToast('❌ Error: ' + error.message, 'error'));
@@ -4510,34 +4522,11 @@ function displayProductDetails(productId) {
             
     // Calculate prices
     const buyPrice = product.buyPrice;
-    const sellPrice = product.sellPrice;
-    const margin = product.margin;
-
-    // Calculate profit first: Profit = Sales - Capital
-    const actualProfit = sellPrice - buyPrice;
-
-    // Get commission rate based on brackets (for admins) or use 100% for owner
-    let userCommissionPercent;
-    if (currentSession.role === 'owner') {
-        userCommissionPercent = 100; // Owner gets 100% of profit
-    } else {
-        // For admins, use bracket-based commission or fallback to profitPercent
-        userCommissionPercent = getCommissionRateForProfit(actualProfit);
-    }
-
-    // Calculate commission: Salary = Profit × Rate (%)
-    let commissionPerUnit = (actualProfit * userCommissionPercent) / 100;
-
-    // Display price (what customer pays)
-    let userPrice = sellPrice;
-
-    // If editing an existing sale, respect the original recorded price/commission
+    // Start with default sell price, but honor existing sale values and manual overrides
+    let userPrice = product.sellPrice;
     if (editingSale && editingSale.productId === productId) {
-        userPrice = parseFloat(editingSale.price) || sellPrice;
-        commissionPerUnit = parseFloat(editingSale.commission) || commissionPerUnit;
+        userPrice = parseFloat(editingSale.price) || userPrice;
     }
-
-    // Allow manual overrides when needed
     if (priceInput && priceInput.value) {
         const manualPrice = parseFloat(priceInput.value);
         if (!isNaN(manualPrice)) {
@@ -4545,8 +4534,19 @@ function displayProductDetails(productId) {
         }
     }
 
+    // Calculate profit based on the actual sale price (not list price)
+    const actualProfit = userPrice - buyPrice;
+    const margin = buyPrice > 0 ? ((actualProfit / buyPrice) * 100) : 0;
+
+    // Get commission rate based on brackets (for admins) or use 100% for owner
+    const userCommissionPercent = currentSession.role === 'owner'
+        ? 100
+        : getCommissionRateForProfit(actualProfit);
+
     // Commission amount (what user earns)
-    const yourCommission = currentSession.role === 'owner' ? actualProfit : commissionPerUnit;
+    const yourCommission = currentSession.role === 'owner'
+        ? actualProfit
+        : (actualProfit * userCommissionPercent) / 100;
             
             // Update single unit display
             if (priceInput) {
@@ -4579,7 +4579,7 @@ function deleteSale(saleId) {
 
     const currentUserRole = currentSession.role;
     const isOwner = currentUserRole === 'owner';
-    const canDelete = isOwner || sale.userId === currentSession.id;
+    const canDelete = isOwner || String(sale.userId) == String(currentSession.id);
 
     if (!canDelete) {
         showToast('❌ You cannot delete this sale', 'error');
@@ -4841,7 +4841,8 @@ function deleteSale(saleId) {
                     ? resolveOwnerContext(soldBy, editingSale)
                     : resolveOwnerContext(soldBy);
                 const soldByUser = users.find(u => u.username === saleOwnerContext.username);
-                const actualProfit = product.sellPrice - product.buyPrice;
+                // Profit is based on the real sale price (what the customer pays)
+                const actualProfit = price - product.buyPrice;
                 const sellerIsOwner = saleOwnerContext.role === 'owner';
                 const commissionRate = sellerIsOwner ? 100 : getCommissionRateForProfit(actualProfit);
                 const commissionAmount = sellerIsOwner ? actualProfit : (actualProfit * commissionRate) / 100;
@@ -4871,7 +4872,7 @@ function deleteSale(saleId) {
                     quantity: quantity,
                     price: price,
                     buyPrice: product.buyPrice,
-                    sellPrice: product.sellPrice,
+                    sellPrice: price,
                     commission: commissionAmount,
                     ownerProfit: ownerProfit,
                     totalPrice: price * quantity,
@@ -4951,8 +4952,8 @@ function deleteSale(saleId) {
                     ? parseFloat(priceInput.value)
                     : parseFloat(document.getElementById('productPrice').textContent.replace('₱', ''));
                 
-                // Calculate profit first: Profit = Sales - Capital
-                const actualProfit = product.sellPrice - product.buyPrice;
+                // Calculate profit first: Profit = Sales - Capital (based on actual sale price)
+                const actualProfit = price - product.buyPrice;
 
                 const saleOwnerContext = isEditing
                     ? resolveOwnerContext(currentSession.username, editingSale)
@@ -4982,7 +4983,7 @@ function deleteSale(saleId) {
                     quantity: quantity,
                     price: price,
                     buyPrice: product.buyPrice,
-                    sellPrice: product.sellPrice,
+                    sellPrice: price,
                     commission: yourProfit,
                     totalPrice: price * quantity,
                     totalCommission: yourProfit * quantity,
@@ -5346,18 +5347,18 @@ function editSale(id) {
             }
             
             userList.innerHTML = adminUsers.map(user => {
-                const userSales = sales.filter(s => s.userId === user.id && s.sold);
+                const userSales = sales.filter(s => String(s.userId) == String(user.id) && s.sold);
                 const summary = userSales.reduce((totals, sale) => {
                     const quantity = parseInt(sale.quantity) || 1;
                     const price = parseFloat(sale.price) || 0;
-                    const buyPrice = parseFloat(sale.buyPrice) || 0;
-                    const sellPrice = parseFloat(sale.sellPrice) || price;
-                    const actualBuy = buyPrice > 0 ? buyPrice : (sellPrice * 0.7);
+                    const hasBuyPrice = sale.buyPrice !== undefined && sale.buyPrice !== null && sale.buyPrice !== '';
+                    const buyPrice = hasBuyPrice ? parseFloat(sale.buyPrice) : null;
+                    const profitPerUnit = hasBuyPrice ? price - buyPrice : 0;
 
                     totals.salesCount += quantity;
                     totals.totalSales += price * quantity;
-                    totals.totalCapital += actualBuy * quantity;
-                    totals.totalProfit += (sellPrice - actualBuy) * quantity;
+                    totals.totalCapital += hasBuyPrice ? buyPrice * quantity : 0;
+                    totals.totalProfit += profitPerUnit * quantity;
                     totals.totalSalary += (parseFloat(sale.commission) || 0) * quantity;
                     return totals;
                 }, {
@@ -5444,14 +5445,16 @@ function getFilteredSales(ignoreUserFilter = false) {
     console.log('🔍 Initial sales count:', filtered.length);
     
     // User filtering
-    if (currentSession.role === 'owner' && !ignoreUserFilter) {
-        const selectedUserId = document.getElementById('userFilter').value;
-        if (selectedUserId !== 'all') {
-            filtered = filtered.filter(s => s.userId == selectedUserId); // Use loose equality
-            console.log(`👤 Filtered by user ${selectedUserId}:`, filtered.length);
+    if (currentSession.role === 'owner') {
+        if (!ignoreUserFilter) {
+            const selectedUserId = document.getElementById('userFilter').value;
+            if (selectedUserId !== 'all') {
+                filtered = filtered.filter(s => s.userId == selectedUserId); // Use loose equality
+                console.log(`👤 Filtered by user ${selectedUserId}:`, filtered.length);
+            }
         }
     } else {
-        filtered = filtered.filter(s => s.userId === currentSession.id);
+        filtered = filtered.filter(s => String(s.userId) == String(currentSession.id));
     }
     
     // Period filtering
@@ -5494,24 +5497,23 @@ function calculateStats() {
     filtered.forEach(sale => {
         // Ensure we have valid numbers
         const quantity = parseInt(sale.quantity) || 1;
-        const price = parseFloat(sale.price) || 0;
-        const buyPrice = parseFloat(sale.buyPrice) || 0;
-        const sellPrice = parseFloat(sale.sellPrice) || price; // Fallback to price if sellPrice missing
+        const salePrice = parseFloat(sale.price) || 0;
+        const hasBuyPrice = sale.buyPrice !== undefined && sale.buyPrice !== null && sale.buyPrice !== '';
+        const buyPrice = hasBuyPrice ? parseFloat(sale.buyPrice) : null;
+        const profitPerUnit = hasBuyPrice ? (salePrice - buyPrice) : 0;
         
         // Always add to total sales (price customer paid)
-        stats.totalSales += (price * quantity);
+        stats.totalSales += (salePrice * quantity);
         stats.totalProducts += quantity;
         
         if (sale.sold) {
             stats.soldCount += quantity;
             
-            // Calculate capital (your cost) - use buyPrice if available, otherwise estimate
-            const actualBuyPrice = buyPrice > 0 ? buyPrice : (sellPrice * 0.7); // Estimate 70% if buyPrice missing
-            stats.totalCapital += (actualBuyPrice * quantity);
+            // Capital is only counted when we know the buy price
+            stats.totalCapital += (hasBuyPrice ? buyPrice * quantity : 0);
             
-            // Calculate business profit (Sell Price - Buy Price)
-            const profitPerUnit = sellPrice - actualBuyPrice;
-            stats.totalProfit += (profitPerUnit * quantity);
+            // Calculate business profit (Sell Price - Buy Price) — profit only when we know cost
+            stats.totalProfit += profitPerUnit * quantity;
         }
     });
 
@@ -5566,18 +5568,18 @@ function renderAdminEarnings() {
     const periodSales = getFilteredSales(true);
 
     const cards = adminUsers.map(user => {
-        const userSales = periodSales.filter(s => s.userId === user.id && s.sold);
+        // Use loose matching to handle string/number IDs from Firebase
+        const userSales = periodSales.filter(s => String(s.userId) == String(user.id) && s.sold);
 
         const totals = userSales.reduce((acc, sale) => {
             const quantity = parseInt(sale.quantity) || 1;
             const price = parseFloat(sale.price) || 0;
-            const buyPrice = parseFloat(sale.buyPrice) || 0;
-            const sellPrice = parseFloat(sale.sellPrice) || price;
-            const actualBuyPrice = buyPrice > 0 ? buyPrice : (sellPrice * 0.7);
+            const hasBuyPrice = sale.buyPrice !== undefined && sale.buyPrice !== null && sale.buyPrice !== '';
+            const buyPrice = hasBuyPrice ? parseFloat(sale.buyPrice) : null;
 
             acc.sales += price * quantity;
-            acc.capital += actualBuyPrice * quantity;
-            acc.profit += (sellPrice - actualBuyPrice) * quantity;
+            acc.capital += hasBuyPrice ? buyPrice * quantity : 0;
+            acc.profit += hasBuyPrice ? (price - buyPrice) * quantity : 0;
             acc.salary += (parseFloat(sale.commission) || 0) * quantity;
             acc.items += quantity;
             return acc;
@@ -5793,7 +5795,7 @@ return `
                 if (!user) return '';
                 
                 // Get sales for this user in the current period
-                let userSales = sales.filter(s => s.userId === user.id && s.sold);
+                let userSales = sales.filter(s => String(s.userId) == String(user.id) && s.sold);
                 
                 if (currentPayoutPeriod === 'week') {
                     const weekAgo = new Date(now);
@@ -5944,7 +5946,7 @@ return `
                 }
                 
                 tbody.innerHTML = historyArray.map(record => {
-                    const user = users.find(u => u.id === record.userId);
+                    const user = users.find(u => String(u.id) == String(record.userId));
                     if (!user) return '';
                     
                     return `
@@ -5969,7 +5971,7 @@ return `
             const adminUsers = users.filter(u => u.role === 'admin');
             
             adminUsers.forEach(user => {
-                const userSales = sales.filter(s => s.userId === user.id && s.sold);
+                const userSales = sales.filter(s => String(s.userId) == String(user.id) && s.sold);
 
                 const totalCommission = userSales.reduce((sum, s) => {
                     return sum + ((s.commission || 0) * s.quantity);
@@ -5977,13 +5979,13 @@ return `
 
                 // Find the most recent paid payout to avoid regenerating payouts that were just settled
                 const latestPaid = payouts
-                    .filter(p => p.userId === user.id && p.status === 'paid')
+                    .filter(p => String(p.userId) == String(user.id) && p.status === 'paid')
                     .sort((a, b) => new Date(b.paidDate || b.date || 0) - new Date(a.paidDate || a.date || 0))[0];
 
                 const lastPaidAmount = latestPaid ? Number(latestPaid.amount || 0) : 0;
                 const outstandingCommission = Math.max(totalCommission - lastPaidAmount, 0);
 
-                const existingPayout = payouts.find(p => p.userId === user.id && p.status === 'pending');
+                const existingPayout = payouts.find(p => String(p.userId) == String(user.id) && p.status === 'pending');
 
                 if (outstandingCommission > 0) {
                     if (existingPayout) {
