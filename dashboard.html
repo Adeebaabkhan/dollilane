@@ -4684,9 +4684,18 @@ function deleteSale(saleId) {
             showSyncingIndicator();
             getRef('products/' + productId).update(updatedProduct)
                 .then(() => {
+                    // Keep local state in sync so price changes appear immediately
+                    products = products.map(p => {
+                        if (String(p.id) === String(productId)) {
+                            return { ...p, ...updatedProduct };
+                        }
+                        return p;
+                    });
+                    renderProductList();
+                    updateProductDropdown();
+
                     closeEditProductModal();
                     showToast('✅ Product updated successfully!', 'success');
-                    renderProductList();
                 })
                 .catch((error) => {
                     showToast('❌ Error: ' + error.message, 'error');
@@ -5576,11 +5585,16 @@ function renderAdminEarnings() {
             const price = parseFloat(sale.price) || 0;
             const hasBuyPrice = sale.buyPrice !== undefined && sale.buyPrice !== null && sale.buyPrice !== '';
             const buyPrice = hasBuyPrice ? parseFloat(sale.buyPrice) : null;
+            const profitPerUnit = hasBuyPrice ? (price - buyPrice) : 0;
 
             acc.sales += price * quantity;
             acc.capital += hasBuyPrice ? buyPrice * quantity : 0;
-            acc.profit += hasBuyPrice ? (price - buyPrice) * quantity : 0;
-            acc.salary += (parseFloat(sale.commission) || 0) * quantity;
+            acc.profit += profitPerUnit * quantity;
+
+            // Calculate salary based on commission brackets using actual profit
+            const commissionRate = getCommissionRateForProfit(profitPerUnit, user.id);
+            const salaryForSale = (profitPerUnit * quantity) * (commissionRate / 100);
+            acc.salary += salaryForSale;
             acc.items += quantity;
             return acc;
         }, { sales: 0, capital: 0, profit: 0, salary: 0, items: 0 });
@@ -6940,8 +6954,14 @@ async function saveBulkSales() {
         // Clear error highlighting
         row.style.backgroundColor = '';
 
-        const commission = sellPrice - buyPrice;
-        const totalCommission = commission * qty;
+        const profitPerUnit = sellPrice - buyPrice;
+        const commissionRate = currentSession.role === 'owner'
+            ? 100
+            : getCommissionRateForProfit(profitPerUnit, currentSession.id);
+        const commissionPerUnit = currentSession.role === 'owner'
+            ? profitPerUnit
+            : (profitPerUnit * commissionRate) / 100;
+        const totalCommission = commissionPerUnit * qty;
 
         salesToSave.push({
             id: Date.now() + index,
@@ -6960,7 +6980,7 @@ async function saveBulkSales() {
             price: sellPrice,
             buyPrice: buyPrice,
             totalPrice: sellPrice * qty,
-            commission: commission,
+            commission: commissionPerUnit,
             totalCommission: totalCommission,
             sold: status === 'yes',
             date: new Date().toISOString().split('T')[0],
