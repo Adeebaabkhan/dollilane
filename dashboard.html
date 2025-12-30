@@ -5704,9 +5704,9 @@ function renderAdminEarnings() {
             acc.capital += hasBuyPrice ? buyPrice * quantity : 0;
             acc.profit += profitPerUnit * quantity;
 
-            // Calculate salary based on commission brackets using actual profit
-            const commissionRate = getCommissionRateForProfit(profitPerUnit, user.id);
-            const salaryForSale = (profitPerUnit * quantity) * (commissionRate / 100);
+            // Calculate salary based on sale price using sale-amount brackets
+            const commissionRate = getCommissionRateForProfit(price, user.id);
+            const salaryForSale = (price * quantity) * (commissionRate / 100);
             acc.salary += salaryForSale;
             acc.items += quantity;
             return acc;
