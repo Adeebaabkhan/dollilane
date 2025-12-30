@@ -3256,11 +3256,13 @@ let realAdmins = []; // Store real admins from Firebase
 let editingSale = null; // Track sale being edited
 let commissionBrackets = []; // Store commission bracket configuration
     const OWNER_SETTINGS_KEY = 'owner';
-    let settings = {
+        let settings = {
             theme: 'theme-purple',
             darkMode: false,
         };
 
+        const isOwner = (user = currentSession) => (user && (user.role || '').toLowerCase() === 'owner');
+        const isAdmin = (user = currentSession) => (user && (user.role || '').toLowerCase() === 'admin');
         let calcValue = '0';
         
         // Streaming service categories for profile tracking
@@ -3511,10 +3513,10 @@ function renderSubscriptionProducts() {
         
         return `
             <div class="subscription-product-item">
-                <div class="subscription-header">
+                    <div class="subscription-header">
                     <div class="subscription-title">🎬 ${product.name}</div>
                     <div>
-                        ${currentSession.role === 'owner' ? `
+                        ${isOwner() ? `
                             <button class="action-btn edit-btn" onclick="editSubscriptionProduct(${product.id})">✏️</button>
                             <button class="action-btn delete-btn" onclick="deleteSubscriptionProduct(${product.id})">🗑️</button>
                         ` : ''}
@@ -3547,7 +3549,7 @@ function renderSubscriptionProducts() {
 }
 
 function deleteSubscriptionProduct(productId) {
-    if (currentSession.role !== 'owner') {
+    if (!isOwner()) {
         showToast('❌ Only the owner can delete subscription products', 'error');
         return;
     }
@@ -3559,7 +3561,7 @@ function deleteSubscriptionProduct(productId) {
 }
 
 function editSubscriptionProduct(productId) {
-    if (currentSession.role !== 'owner') {
+    if (!isOwner()) {
         showToast('❌ Only the owner can edit subscription prices', 'error');
         return;
     }
@@ -3585,7 +3587,7 @@ function closeEditSubscriptionModal() {
 function saveSubscriptionEdit(event) {
     event.preventDefault();
 
-    if (currentSession.role !== 'owner') {
+    if (!isOwner()) {
         showToast('❌ Only the owner can edit subscription prices', 'error');
         return;
     }
@@ -3725,18 +3727,18 @@ function selectProfile(number) {
             
             
             document.getElementById('userName').textContent = currentSession.customName;
-            document.getElementById('userRole').textContent = currentSession.role === 'owner' ? '👑 OWNER' : '👤 ADMIN';
+            document.getElementById('userRole').textContent = isOwner() ? '👑 OWNER' : '👤 ADMIN';
             document.getElementById('userAvatar').textContent = currentSession.customName.charAt(0).toUpperCase();
 
             // Admins cannot edit prices/rates
             const priceInput = document.getElementById('productPriceInput');
             if (priceInput) {
-                const adminLock = currentSession.role !== 'owner';
+                const adminLock = !isOwner();
                 priceInput.readOnly = adminLock;
                 priceInput.title = adminLock ? 'Admins cannot change prices' : '';
             }
             
-            if (currentSession.role === 'owner') {
+            if (isOwner()) {
                 document.getElementById('btnUsers').style.display = 'inline-block';
                 document.getElementById('btnProducts').style.display = 'inline-block';
                 document.getElementById('btnPayout').style.display = 'inline-block';
@@ -3791,7 +3793,7 @@ function loadAllData() {
         loadRealAdmins();
         
         // Update user filter for owner
-        if (currentSession.role === 'owner') {
+        if (isOwner()) {
             const userFilter = document.getElementById('userFilter');
             userFilter.innerHTML = '<option value="all">All Admins</option>';
             users.forEach(user => {
@@ -3846,7 +3848,7 @@ function loadAllData() {
         console.log('✅ Loaded products:', products.length);
         updateProductDropdown();
         // Both owners and admins can view products
-        if (currentSession.role === 'owner' || currentSession.role === 'admin') {
+        if (isOwner() || isAdmin()) {
             renderProductList();
             // Refresh sales with accurate buy prices once products are available
             if (sales.length > 0) {
@@ -3909,7 +3911,7 @@ function loadAllData() {
         accounts = Object.values(accountsData);
         console.log('🎬 Loaded accounts:', accounts.length);
         populateAccountDropdown();
-        if (currentSession.role === 'owner') {
+        if (isOwner()) {
             renderInventoryDashboard();
         }
     });
@@ -3937,7 +3939,7 @@ function loadAllData() {
 function loadAllSalesData() {
     console.log('🔄 Loading sales data...');
     
-    if (currentSession.role === 'owner') {
+    if (isOwner()) {
         // Owner: Load sales from ALL users
         getRef('sales').on('value', (snapshot) => {
             const salesData = snapshot.val() || {};
@@ -4341,7 +4343,7 @@ function updateProductDropdown() {
                 
                 if (currentSession.role === 'admin') {
                     adminCommission = getCommissionRateForProfit(profit, currentSession.id);
-                    adminEarns = profit * (adminCommission / 100);
+                    adminEarns = sellPrice * (adminCommission / 100); // salary based on sale price
                     ownerGets = profit - adminEarns;
                 }
                 
@@ -4350,7 +4352,7 @@ function updateProductDropdown() {
                     const customComm = product.customCommissions[currentSession.id];
                     if (customComm !== undefined) {
                         adminCommission = customComm;
-                        adminEarns = profit * (adminCommission / 100);
+                        adminEarns = sellPrice * (adminCommission / 100); // salary based on sale price
                         ownerGets = profit - adminEarns;
                         customCommissionIndicator = '✨ Custom';
                     }
@@ -4361,9 +4363,9 @@ function updateProductDropdown() {
                             <div class="product-item-header">
                                 <div class="product-item-name">${product.name}</div>
                                 <div>
-                                ${currentSession.role === 'owner' ?
+                                ${isOwner() ?
                                     `<button class="action-btn edit-btn" onclick="editProduct('${product.id}')">✏️ Edit</button>` : ''}
-                                ${currentSession.role === 'owner' ?
+                                ${isOwner() ?
                                     `<button class="action-btn delete-btn" onclick="deleteProduct('${product.id}')">🗑️ Delete</button>` : ''}
                             </div>
                         </div>
@@ -4597,7 +4599,7 @@ function displayProductDetails(productId) {
     }
 
     // Only owners can override price manually
-    if (currentSession.role === 'owner' && priceInput && priceInput.value) {
+    if (isOwner() && priceInput && priceInput.value) {
         const manualPrice = parseFloat(priceInput.value);
         if (!isNaN(manualPrice)) {
             userPrice = manualPrice;
@@ -4612,14 +4614,14 @@ function displayProductDetails(productId) {
     const margin = buyPrice > 0 ? ((actualProfit / buyPrice) * 100) : 0;
 
     // Get commission rate based on brackets (for admins) or use 100% for owner
-    const userCommissionPercent = currentSession.role === 'owner'
+    const userCommissionPercent = isOwner()
         ? 100
         : getCommissionRateForProfit(actualProfit);
 
     // Commission amount (what user earns)
-    const yourCommission = currentSession.role === 'owner'
+    const yourCommission = isOwner()
         ? actualProfit
-        : (actualProfit * userCommissionPercent) / 100;
+        : (userPrice * userCommissionPercent) / 100; // salary based on sale price
             
             // Update single unit display
             if (priceInput) {
@@ -4650,9 +4652,7 @@ function deleteSale(saleId) {
     const userKey = sale.userKey || sanitizeUserKey(sale.soldBy || sale.recordedBy || currentSession.username);
     const saleRef = getRef(`sales/${userKey}/${saleId}`);
 
-    const currentUserRole = currentSession.role;
-    const isOwner = currentUserRole === 'owner';
-    const canDelete = isOwner || String(sale.userId) == String(currentSession.id);
+    const canDelete = isOwner() || String(sale.userId) == String(currentSession.id);
 
     if (!canDelete) {
         showToast('❌ You cannot delete this sale', 'error');
@@ -4681,7 +4681,7 @@ function deleteSale(saleId) {
 
 // Delete Product (owner only)
 function deleteProduct(productId) {
-    if (currentSession.role !== 'owner') {
+    if (!isOwner()) {
         showToast('❌ Only the owner can delete products', 'error');
         return;
     }
@@ -4708,7 +4708,7 @@ function deleteProduct(productId) {
         // Edit Product
         function editProduct(productId) {
             // Pricing controls are owner-only
-            if (currentSession.role !== 'owner') {
+            if (!isOwner()) {
                 showToast('❌ Only the owner can edit product prices and rates', 'error');
                 return;
             }
@@ -4751,7 +4751,7 @@ function deleteProduct(productId) {
         function saveProductEdit(event) {
             event.preventDefault();
 
-            if (currentSession.role !== 'owner') {
+            if (!isOwner()) {
                 showToast('❌ Only the owner can edit product prices and rates', 'error');
                 return;
             }
@@ -4950,7 +4950,7 @@ function deleteProduct(productId) {
 
                 const quantity = 1; // Always 1 for profile sales
                 const priceInput = document.getElementById('productPriceInput');
-                const price = currentSession.role === 'owner'
+                const price = isOwner()
                     ? (priceInput && priceInput.value
                         ? parseFloat(priceInput.value)
                         : parseFloat(document.getElementById('productPrice').textContent.replace('₱', '')))
@@ -4965,7 +4965,8 @@ function deleteProduct(productId) {
                 const actualProfit = price - product.buyPrice;
                 const sellerIsOwner = saleOwnerContext.role === 'owner';
                 const commissionRate = sellerIsOwner ? 100 : getCommissionRateForProfit(actualProfit);
-                const commissionAmount = sellerIsOwner ? actualProfit : (actualProfit * commissionRate) / 100;
+                // Salary based on sale price
+                const commissionAmount = sellerIsOwner ? actualProfit : (price * commissionRate) / 100;
                 const ownerProfit = actualProfit - commissionAmount;
 
                 const saleOwnerUsername = saleOwnerContext.username;
@@ -5068,7 +5069,7 @@ function deleteProduct(productId) {
                 
                 const quantity = parseInt(document.getElementById('productQuantity').value);
                 const priceInput = document.getElementById('productPriceInput');
-                const price = currentSession.role === 'owner'
+                const price = isOwner()
                     ? (priceInput && priceInput.value
                         ? parseFloat(priceInput.value)
                         : parseFloat(document.getElementById('productPrice').textContent.replace('₱', '')))
@@ -5082,11 +5083,11 @@ function deleteProduct(productId) {
                     : resolveOwnerContext(currentSession.username);
 
                 // Use bracket-based commission for admins or 100% for owner
-                const userCommissionPercent = saleOwnerContext.role === 'owner' ? 100 : getCommissionRateForProfit(actualProfit);
+                const userCommissionPercent = isOwner(saleOwnerContext) ? 100 : getCommissionRateForProfit(actualProfit);
 
-                // Calculate salary: Salary = Profit × Rate (%)
-                const commissionAmount = (actualProfit * userCommissionPercent) / 100;
-                const yourProfit = saleOwnerContext.role === 'owner' ? actualProfit : commissionAmount;
+                // Calculate salary: Salary = Sale Price × Rate (%)
+                const commissionAmount = (price * userCommissionPercent) / 100;
+                const yourProfit = isOwner(saleOwnerContext) ? actualProfit : commissionAmount;
 
                 const newSale = {
                     id: saleId,
@@ -5270,7 +5271,7 @@ function deleteProduct(productId) {
                             <div class="product-item-name">🎬 ${account.id} - ${account.product}</div>
                             <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end;">
                                 <span class="inventory-status-badge" style="color: ${statusColor}; border-color: ${statusColor}; background: ${statusBg};">${statusLabel}</span>
-                                ${currentSession.role === 'owner' ? `<button class="action-btn delete-btn" onclick="deleteAccount('${account.id}')">🗑️ Delete</button>` : ''}
+                                ${isOwner() ? `<button class="action-btn delete-btn" onclick="deleteAccount('${account.id}')">🗑️ Delete</button>` : ''}
                             </div>
                         </div>
                         <div class="product-item-details">
@@ -5567,7 +5568,7 @@ function getFilteredSales(ignoreUserFilter = false) {
     console.log('🔍 Initial sales count:', filtered.length);
     
     // User filtering
-    if (currentSession.role === 'owner') {
+    if (isOwner()) {
         if (!ignoreUserFilter) {
             const selectedUserId = document.getElementById('userFilter').value;
             if (selectedUserId !== 'all') {
@@ -5794,7 +5795,7 @@ function renderAdminEarnings() {
 return `
     <tr data-sale-id="${sale.id}">
         <td>${sale.date}</td>
-        ${currentSession.role === 'owner' ? `<td>${sale.userName}</td>` : ''}
+        ${isOwner() ? `<td>${sale.userName}</td>` : ''}
         <td>${sale.productName}</td>
         <td>${sale.buyerUsername || '-'}</td>
         <td>${sale.accountEmail || '-'}</td>
@@ -6165,7 +6166,7 @@ return `
             
             const userKey = currentSession.username.replace(/[.#$/[\]]/g, '_');
             
-            if (currentSession.role === 'owner') {
+            if (isOwner()) {
                 getRef('sales').remove()
                     .then(() => {
                         showToast('✅ All sales data cleared', 'success');
@@ -6389,7 +6390,7 @@ function loadCommissionBrackets() {
                 { id: 4, minProfit: 1000, maxProfit: null, rate: 25 }
             ];
             // Save defaults
-            if (currentSession.role === 'owner') {
+            if (isOwner()) {
                 saveCommissionBrackets();
             }
         }
@@ -6399,7 +6400,7 @@ function loadCommissionBrackets() {
 
 // Save commission brackets
 function saveCommissionBrackets() {
-    if (currentSession.role !== 'owner') return;
+    if (!isOwner()) return;
     
     showSyncingIndicator();
     getCommissionBracketsRef().set(commissionBrackets)
@@ -7073,12 +7074,13 @@ async function saveBulkSales() {
         row.style.backgroundColor = '';
 
         const profitPerUnit = sellPrice - buyPrice;
-        const commissionRate = currentSession.role === 'owner'
+        const commissionRate = isOwner()
             ? 100
             : getCommissionRateForProfit(profitPerUnit, currentSession.id);
-        const commissionPerUnit = currentSession.role === 'owner'
+        // Salary based on sale price, not profit
+        const commissionPerUnit = isOwner()
             ? profitPerUnit
-            : (profitPerUnit * commissionRate) / 100;
+            : (sellPrice * commissionRate) / 100;
         const totalCommission = commissionPerUnit * qty;
 
         salesToSave.push({
