@@ -4342,7 +4342,8 @@ function updateProductDropdown() {
                 let customCommissionIndicator = '';
                 
                 if (currentSession.role === 'admin') {
-                    adminCommission = getCommissionRateForProfit(profit, currentSession.id);
+                    // Commission bracket now based on sale price
+                    adminCommission = getCommissionRateForProfit(sellPrice, currentSession.id);
                     adminEarns = sellPrice * (adminCommission / 100); // salary based on sale price
                     ownerGets = profit - adminEarns;
                 }
@@ -4613,10 +4614,10 @@ function displayProductDetails(productId) {
     const actualProfit = userPrice - buyPrice;
     const margin = buyPrice > 0 ? ((actualProfit / buyPrice) * 100) : 0;
 
-    // Get commission rate based on brackets (for admins) or use 100% for owner
+    // Get commission rate based on brackets (for admins) or use 100% for owner (brackets now keyed on sale price)
     const userCommissionPercent = isOwner()
         ? 100
-        : getCommissionRateForProfit(actualProfit);
+        : getCommissionRateForProfit(userPrice);
 
     // Commission amount (what user earns)
     const yourCommission = isOwner()
@@ -4964,7 +4965,7 @@ function deleteProduct(productId) {
                 // Profit is based on the real sale price (what the customer pays)
                 const actualProfit = price - product.buyPrice;
                 const sellerIsOwner = saleOwnerContext.role === 'owner';
-                const commissionRate = sellerIsOwner ? 100 : getCommissionRateForProfit(actualProfit);
+                const commissionRate = sellerIsOwner ? 100 : getCommissionRateForProfit(price);
                 // Salary based on sale price
                 const commissionAmount = sellerIsOwner ? actualProfit : (price * commissionRate) / 100;
                 const ownerProfit = actualProfit - commissionAmount;
@@ -5082,8 +5083,8 @@ function deleteProduct(productId) {
                     ? resolveOwnerContext(currentSession.username, editingSale)
                     : resolveOwnerContext(currentSession.username);
 
-                // Use bracket-based commission for admins or 100% for owner
-                const userCommissionPercent = isOwner(saleOwnerContext) ? 100 : getCommissionRateForProfit(actualProfit);
+                // Use bracket-based commission for admins or 100% for owner (brackets keyed on sale price)
+                const userCommissionPercent = isOwner(saleOwnerContext) ? 100 : getCommissionRateForProfit(price);
 
                 // Calculate salary: Salary = Sale Price × Rate (%)
                 const commissionAmount = (price * userCommissionPercent) / 100;
@@ -6413,7 +6414,8 @@ function saveCommissionBrackets() {
 }
 
 // Calculate commission rate based on profit and brackets
-function getCommissionRateForProfit(profit, userId = null) {
+// Bracket lookup now keyed on sale price (per-unit), not profit
+function getCommissionRateForProfit(saleAmount, userId = null) {
     // Determine which user's commission mode to check
     const user = userId ? users.find(u => u.id === userId) : currentSession;
     
@@ -6435,12 +6437,12 @@ function getCommissionRateForProfit(profit, userId = null) {
         
         if (max === null || max === undefined) {
             // This is the "and above" bracket
-            if (profit >= min) {
+            if (saleAmount >= min) {
                 return bracket.rate;
             }
         } else {
             // Standard bracket with min and max
-            if (profit >= min && profit <= max) {
+            if (saleAmount >= min && saleAmount <= max) {
                 return bracket.rate;
             }
         }
@@ -7076,7 +7078,7 @@ async function saveBulkSales() {
         const profitPerUnit = sellPrice - buyPrice;
         const commissionRate = isOwner()
             ? 100
-            : getCommissionRateForProfit(profitPerUnit, currentSession.id);
+            : getCommissionRateForProfit(sellPrice, currentSession.id);
         // Salary based on sale price, not profit
         const commissionPerUnit = isOwner()
             ? profitPerUnit
