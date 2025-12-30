@@ -3798,18 +3798,32 @@ function loadAllData() {
 
         snapshot.forEach(child => {
             const productData = child.val() || {};
+            const buyPrice = Number(productData.buyPrice) || 0;
+            const sellPrice = Number(productData.sellPrice) || 0;
 
-            // Always keep a stable string id based on the Firebase key
-            products.push({
+            // Normalize fields so Manage Products never breaks when numbers are stored as strings
+            const normalizedProduct = {
                 id: child.key,
-                margin: 0,
-                ...productData,
-                // Recalculate margin if missing to keep UI in sync
-                margin: typeof productData.margin === 'number'
-                    ? productData.margin
-                    : productData.buyPrice
-                        ? ((productData.sellPrice - productData.buyPrice) / productData.buyPrice) * 100
-                        : 0
+                name: productData.name || 'Untitled Product',
+                buyPrice,
+                sellPrice,
+                category: productData.category || 'Other',
+                accountTypes: productData.accountTypes || [],
+                customCommissions: productData.customCommissions || {},
+                createdDate: productData.createdDate || productData.createdAt || '',
+                updatedDate: productData.updatedDate || productData.updatedAt || ''
+            };
+
+            // Recalculate margin if missing or invalid to keep UI in sync
+            const margin = typeof productData.margin === 'number' && !isNaN(productData.margin)
+                ? productData.margin
+                : buyPrice > 0
+                    ? ((sellPrice - buyPrice) / buyPrice) * 100
+                    : 0;
+
+            products.push({
+                ...normalizedProduct,
+                margin
             });
         });
 
@@ -3914,7 +3928,7 @@ function loadAllSalesData() {
                 
                 if (userSales && typeof userSales === 'object') {
                     Object.keys(userSales).forEach(saleKey => {
-                        const sale = userSales[saleKey];
+                        const sale = normalizeSaleRecord(userSales[saleKey]);
                         
                         // Ensure sale has all required properties
                         sale.id = saleKey;
@@ -3960,21 +3974,21 @@ function loadAllSalesData() {
         const userKey = currentSession.username.replace(/[.#$/[\]]/g, '_');
         console.log('👤 Admin loading sales from path:', 'sales/' + userKey);
         
-                getRef('sales/' + userKey).on('value', (snapshot) => {
-                    const salesData = snapshot.val() || {};
-                    sales = [];
+        getRef('sales/' + userKey).on('value', (snapshot) => {
+            const salesData = snapshot.val() || {};
+            sales = [];
             
             console.log('📊 Admin sales data:', salesData);
             
-                    Object.keys(salesData).forEach(saleKey => {
-                        const sale = salesData[saleKey];
-                        sale.id = saleKey;
-                        sale.userName = currentSession.customName;
-                        sale.userId = currentSession.id;
-                        sale.userRole = currentSession.role;
-                        sale.userKey = userKey;
-                        sales.push(sale);
-                    });
+            Object.keys(salesData).forEach(saleKey => {
+                const sale = normalizeSaleRecord(salesData[saleKey]);
+                sale.id = saleKey;
+                sale.userName = currentSession.customName;
+                sale.userId = currentSession.id;
+                sale.userRole = currentSession.role;
+                sale.userKey = userKey;
+                sales.push(sale);
+            });
             
             console.log('✅ Admin loaded sales:', sales.length);
             updateStats();
@@ -3982,6 +3996,29 @@ function loadAllSalesData() {
             updateCharts();
         });
     }
+}
+
+// Normalize sale values so profit & salary math always works
+function normalizeSaleRecord(rawSale = {}) {
+    const sale = { ...rawSale };
+
+    sale.quantity = parseInt(sale.quantity) || 1;
+    sale.price = Number(sale.price) || 0;
+
+    // Default sold to true when data is missing the flag
+    sale.sold = sale.sold !== false;
+
+    // Try to keep buyPrice intact; if missing, pull from products catalog
+    const hasBuyPrice = sale.buyPrice !== undefined && sale.buyPrice !== null && sale.buyPrice !== '';
+    let buyPrice = hasBuyPrice ? Number(sale.buyPrice) : NaN;
+    if (isNaN(buyPrice)) {
+        const matchingProduct = products.find(p => String(p.id) === String(sale.productId));
+        buyPrice = matchingProduct ? Number(matchingProduct.buyPrice) || 0 : 0;
+    }
+
+    sale.buyPrice = buyPrice;
+
+    return sale;
 }
 
 // Populate Sold By dropdown with admin names
@@ -4263,21 +4300,24 @@ function updateProductDropdown() {
             }
             
             productList.innerHTML = products.map(product => {
-                const profit = product.sellPrice - product.buyPrice;
+                const buyPrice = Number(product.buyPrice) || 0;
+                const sellPrice = Number(product.sellPrice) || 0;
+                const profit = sellPrice - buyPrice;
+                const safeMargin = isFinite(product.margin) ? Number(product.margin) : (buyPrice > 0 ? (profit / buyPrice) * 100 : 0);
                 
                 // Calculate admin commission if user is admin
                 let adminCommission = 0;
                 let adminEarns = 0;
                 let ownerGets = 0;
+                let customCommissionIndicator = '';
                 
                 if (currentSession.role === 'admin') {
-                    adminCommission = currentSession.profitPercent || 25;
+                    adminCommission = getCommissionRateForProfit(profit, currentSession.id);
                     adminEarns = profit * (adminCommission / 100);
                     ownerGets = profit - adminEarns;
                 }
                 
                 // Check for custom commission
-                let customCommissionIndicator = '';
                 if (product.customCommissions && currentSession.role === 'admin') {
                     const customComm = product.customCommissions[currentSession.id];
                     if (customComm !== undefined) {
@@ -4302,15 +4342,15 @@ function updateProductDropdown() {
                         <div class="product-item-details">
                             <div class="product-detail">
                                 <div class="product-detail-label">🛒 Buy Price</div>
-                                <div class="product-detail-value">₱${product.buyPrice.toFixed(2)}</div>
+                                <div class="product-detail-value">₱${buyPrice.toFixed(2)}</div>
                             </div>
                             <div class="product-detail">
                                 <div class="product-detail-label">💰 Sell Price</div>
-                                <div class="product-detail-value">₱${product.sellPrice.toFixed(2)}</div>
+                                <div class="product-detail-value">₱${sellPrice.toFixed(2)}</div>
                             </div>
                             <div class="product-detail">
                                 <div class="product-detail-label">📊 Margin</div>
-                                <div class="product-detail-value">${product.margin.toFixed(2)}%</div>
+                                <div class="product-detail-value">${safeMargin.toFixed(2)}%</div>
                             </div>
                             <div class="product-detail">
                                 <div class="product-detail-label">${currentSession.role === 'admin' ? '💰 Total Profit' : '🎯 Your Profit'}</div>
