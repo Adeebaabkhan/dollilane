@@ -3627,11 +3627,11 @@ function saveSubscriptionEdit(event) {
 
 function handleProductSelectionForSale() {
     const productSelect = document.getElementById('productSelect');
-    const productId = parseInt(productSelect.value);
+    const productId = productSelect.value;
     const saleTypeSelection = document.getElementById('saleTypeSelection');
     if (!saleTypeSelection) return;
     
-    const subProduct = subscriptionProducts.find(p => p.id === productId);
+    const subProduct = subscriptionProducts.find(p => String(p.id) === String(productId));
     if (subProduct) {
         saleTypeSelection.classList.add('show');
         updateProfileSelection(subProduct);
@@ -4062,6 +4062,11 @@ function applySettings() {
     document.getElementById('themeSelect').value = settings.theme;
 }
 
+        // Helper to fetch a product regardless of numeric/string Firebase keys
+        function findProductById(productId) {
+            return products.find(p => String(p.id) === String(productId));
+        }
+
         // =================== PRODUCT MANAGEMENT ===================
         
         // Handle Product Name Selection
@@ -4413,14 +4418,14 @@ function updateProductDropdown() {
         
         // Show product details when selected
         document.getElementById('productSelect').addEventListener('change', function() {
-            const productId = parseInt(this.value);
+            const productId = this.value;
             displayProductDetails(productId);
             handleProductChangeForProfileTracking(productId);
         });
 
         // Handle product selection for profile tracking
         function handleProductChangeForProfileTracking(productId) {
-            const product = products.find(p => p.id === productId);
+            const product = findProductById(productId);
             if (!product) {
                 document.getElementById('profileTrackingFields').style.display = 'none';
                 return;
@@ -4531,7 +4536,7 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
 });
         // Update when quantity changes
         document.getElementById('productQuantity').addEventListener('input', function() {
-            const productId = parseInt(document.getElementById('productSelect').value);
+            const productId = document.getElementById('productSelect').value;
             if (productId) {
                 displayProductDetails(productId);
             }
@@ -4540,7 +4545,7 @@ document.querySelectorAll('input[name="saleType"]').forEach(radio => {
         const productPriceInput = document.getElementById('productPriceInput');
         if (productPriceInput) {
             productPriceInput.addEventListener('input', function() {
-                const productId = parseInt(document.getElementById('productSelect').value);
+                const productId = document.getElementById('productSelect').value;
                 if (productId) {
                     displayProductDetails(productId);
                 }
@@ -4554,7 +4559,7 @@ function displayProductDetails(productId) {
                 return;
             }
             
-            const product = products.find(p => p.id === productId);
+            const product = findProductById(productId);
             if (!product) return;
             
             const quantity = parseInt(document.getElementById('productQuantity').value) || 1;
@@ -4564,7 +4569,7 @@ function displayProductDetails(productId) {
     const buyPrice = product.buyPrice;
     // Start with default sell price, but honor existing sale values and manual overrides
     let userPrice = product.sellPrice;
-    if (editingSale && editingSale.productId === productId) {
+    if (editingSale && String(editingSale.productId) === String(productId)) {
         userPrice = parseFloat(editingSale.price) || userPrice;
     }
     if (priceInput && priceInput.value) {
@@ -4779,14 +4784,14 @@ function deleteSale(saleId) {
                 };
             };
 
-            const productId = parseInt(document.getElementById('productSelect').value);
+            const productId = document.getElementById('productSelect').value;
 
             if (!productId) {
                 showToast('⚠️ Please select a product', 'error');
                 return;
             }
 
-            const product = products.find(p => p.id === productId);
+            const product = findProductById(productId);
             const isStreaming = STREAMING_CATEGORIES.includes(product.category);
 
             const timestamp = Date.now();
@@ -6984,7 +6989,7 @@ async function saveBulkSales() {
             return;
         }
 
-        const selectedProduct = products.find(p => p.id == productSelect.value);
+        const selectedProduct = findProductById(productSelect.value);
         if (!selectedProduct) {
             errors.push(`Row ${index + 1}: Product not found`);
             row.style.backgroundColor = '#ffe6e6';
