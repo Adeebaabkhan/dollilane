@@ -6071,14 +6071,10 @@ return `
             adminUsers.forEach(user => {
                 const userSales = sales.filter(s => String(s.userId) == String(user.id) && s.sold);
 
-                // Recalculate commission per sale using profit-based brackets to keep payouts accurate
+                // Sum the recorded commission per sale to mirror what the app actually stored
                 const totalCommission = userSales.reduce((sum, s) => {
                     const quantity = parseInt(s.quantity) || 1;
-                    const pricePerUnit = Number(s.price || s.sellPrice) || 0;
-                    const buyPrice = Number(s.buyPrice) || 0;
-                    const profitPerUnit = pricePerUnit - buyPrice;
-                    const commissionRate = getCommissionRateForProfit(profitPerUnit, user.id);
-                    const commissionPerUnit = profitPerUnit > 0 ? (profitPerUnit * commissionRate) / 100 : 0;
+                    const commissionPerUnit = Number(s.commission) || 0;
                     return sum + (commissionPerUnit * quantity);
                 }, 0);
 
