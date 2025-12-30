@@ -3255,6 +3255,7 @@ let selectedProfile = null;
 let realAdmins = []; // Store real admins from Firebase
 let editingSale = null; // Track sale being edited
 let commissionBrackets = []; // Store commission bracket configuration
+    const OWNER_SETTINGS_KEY = 'owner';
     let settings = {
             theme: 'theme-purple',
             darkMode: false,
@@ -3513,8 +3514,10 @@ function renderSubscriptionProducts() {
                 <div class="subscription-header">
                     <div class="subscription-title">🎬 ${product.name}</div>
                     <div>
-                        <button class="action-btn edit-btn" onclick="editSubscriptionProduct(${product.id})">✏️</button>
-                        <button class="action-btn delete-btn" onclick="deleteSubscriptionProduct(${product.id})">🗑️</button>
+                        ${currentSession.role === 'owner' ? `
+                            <button class="action-btn edit-btn" onclick="editSubscriptionProduct(${product.id})">✏️</button>
+                            <button class="action-btn delete-btn" onclick="deleteSubscriptionProduct(${product.id})">🗑️</button>
+                        ` : ''}
                     </div>
                 </div>
 
@@ -3544,6 +3547,11 @@ function renderSubscriptionProducts() {
 }
 
 function deleteSubscriptionProduct(productId) {
+    if (currentSession.role !== 'owner') {
+        showToast('❌ Only the owner can delete subscription products', 'error');
+        return;
+    }
+
     if (!confirm('Delete this subscription product?')) return;
     getRef('subscriptionProducts/' + productId).remove()
         .then(() => showToast('🗑️ Product deleted', 'info'))
@@ -3551,8 +3559,8 @@ function deleteSubscriptionProduct(productId) {
 }
 
 function editSubscriptionProduct(productId) {
-    if (currentSession.role !== 'owner' && currentSession.role !== 'admin') {
-        showToast('❌ Only admins and owners can edit subscription prices', 'error');
+    if (currentSession.role !== 'owner') {
+        showToast('❌ Only the owner can edit subscription prices', 'error');
         return;
     }
 
@@ -3577,8 +3585,8 @@ function closeEditSubscriptionModal() {
 function saveSubscriptionEdit(event) {
     event.preventDefault();
 
-    if (currentSession.role !== 'owner' && currentSession.role !== 'admin') {
-        showToast('❌ Only admins and owners can edit subscription prices', 'error');
+    if (currentSession.role !== 'owner') {
+        showToast('❌ Only the owner can edit subscription prices', 'error');
         return;
     }
 
@@ -3719,6 +3727,14 @@ function selectProfile(number) {
             document.getElementById('userName').textContent = currentSession.customName;
             document.getElementById('userRole').textContent = currentSession.role === 'owner' ? '👑 OWNER' : '👤 ADMIN';
             document.getElementById('userAvatar').textContent = currentSession.customName.charAt(0).toUpperCase();
+
+            // Admins cannot edit prices/rates
+            const priceInput = document.getElementById('productPriceInput');
+            if (priceInput) {
+                const adminLock = currentSession.role !== 'owner';
+                priceInput.readOnly = adminLock;
+                priceInput.title = adminLock ? 'Admins cannot change prices' : '';
+            }
             
             if (currentSession.role === 'owner') {
                 document.getElementById('btnUsers').style.display = 'inline-block';
@@ -3832,6 +3848,13 @@ function loadAllData() {
         // Both owners and admins can view products
         if (currentSession.role === 'owner' || currentSession.role === 'admin') {
             renderProductList();
+            // Refresh sales with accurate buy prices once products are available
+            if (sales.length > 0) {
+                sales = sales.map(normalizeSaleRecord);
+                updateStats();
+                renderSalesTable();
+                updateCharts();
+            }
         }
     });
 
@@ -4335,10 +4358,10 @@ function updateProductDropdown() {
                 
                 return `
                     <div class="product-item">
-                        <div class="product-item-header">
-                            <div class="product-item-name">${product.name}</div>
-                            <div>
-                                ${currentSession.role === 'owner' || currentSession.role === 'admin' ?
+                            <div class="product-item-header">
+                                <div class="product-item-name">${product.name}</div>
+                                <div>
+                                ${currentSession.role === 'owner' ?
                                     `<button class="action-btn edit-btn" onclick="editProduct('${product.id}')">✏️ Edit</button>` : ''}
                                 ${currentSession.role === 'owner' ?
                                     `<button class="action-btn delete-btn" onclick="deleteProduct('${product.id}')">🗑️ Delete</button>` : ''}
@@ -4567,16 +4590,21 @@ function displayProductDetails(productId) {
             
     // Calculate prices
     const buyPrice = product.buyPrice;
-    // Start with default sell price, but honor existing sale values and manual overrides
+    // Start with default sell price, but honor existing sale values for edits
     let userPrice = product.sellPrice;
     if (editingSale && String(editingSale.productId) === String(productId)) {
         userPrice = parseFloat(editingSale.price) || userPrice;
     }
-    if (priceInput && priceInput.value) {
+
+    // Only owners can override price manually
+    if (currentSession.role === 'owner' && priceInput && priceInput.value) {
         const manualPrice = parseFloat(priceInput.value);
         if (!isNaN(manualPrice)) {
             userPrice = manualPrice;
         }
+    } else if (priceInput) {
+        // Keep input locked to computed price for admins
+        priceInput.readOnly = true;
     }
 
     // Calculate profit based on the actual sale price (not list price)
@@ -4652,13 +4680,13 @@ function deleteSale(saleId) {
 }
         // Edit Product
         function editProduct(productId) {
-            // Allow both owners and admins to edit product pricing
-            if (currentSession.role !== 'owner' && currentSession.role !== 'admin') {
-                showToast('❌ Only admins and owners can edit product prices and rates', 'error');
+            // Pricing controls are owner-only
+            if (currentSession.role !== 'owner') {
+                showToast('❌ Only the owner can edit product prices and rates', 'error');
                 return;
             }
             
-            const product = products.find(p => String(p.id) === String(productId));
+            const product = findProductById(productId);
             if (!product) return;
             
             // Pre-fill the form
@@ -4695,6 +4723,11 @@ function deleteSale(saleId) {
 
         function saveProductEdit(event) {
             event.preventDefault();
+
+            if (currentSession.role !== 'owner') {
+                showToast('❌ Only the owner can edit product prices and rates', 'error');
+                return;
+            }
             
             const productId = document.getElementById('editProductId').value;
             const name = document.getElementById('editProductName').value.trim();
@@ -4792,6 +4825,10 @@ function deleteSale(saleId) {
             }
 
             const product = findProductById(productId);
+            if (!product) {
+                showToast('❌ Selected product was not found. Please refresh your products and try again.', 'error');
+                return;
+            }
             const isStreaming = STREAMING_CATEGORIES.includes(product.category);
 
             const timestamp = Date.now();
@@ -4886,9 +4923,11 @@ function deleteSale(saleId) {
 
                 const quantity = 1; // Always 1 for profile sales
                 const priceInput = document.getElementById('productPriceInput');
-                const price = priceInput && priceInput.value
-                    ? parseFloat(priceInput.value)
-                    : parseFloat(document.getElementById('productPrice').textContent.replace('₱', ''));
+                const price = currentSession.role === 'owner'
+                    ? (priceInput && priceInput.value
+                        ? parseFloat(priceInput.value)
+                        : parseFloat(document.getElementById('productPrice').textContent.replace('₱', '')))
+                    : (editingSale ? parseFloat(editingSale.price) : product.sellPrice);
 
                 // Calculate commission based on who sold the slot
                 const saleOwnerContext = isEditing
@@ -5002,9 +5041,11 @@ function deleteSale(saleId) {
                 
                 const quantity = parseInt(document.getElementById('productQuantity').value);
                 const priceInput = document.getElementById('productPriceInput');
-                const price = priceInput && priceInput.value
-                    ? parseFloat(priceInput.value)
-                    : parseFloat(document.getElementById('productPrice').textContent.replace('₱', ''));
+                const price = currentSession.role === 'owner'
+                    ? (priceInput && priceInput.value
+                        ? parseFloat(priceInput.value)
+                        : parseFloat(document.getElementById('productPrice').textContent.replace('₱', '')))
+                    : (editingSale ? parseFloat(editingSale.price) : product.sellPrice);
                 
                 // Calculate profit first: Profit = Sales - Capital (based on actual sale price)
                 const actualProfit = price - product.buyPrice;
@@ -5568,12 +5609,11 @@ function calculateStats() {
             
             // Calculate business profit (Sell Price - Buy Price) — profit only when we know cost
             stats.totalProfit += profitPerUnit * quantity;
+
+            // Salary: sum the commission actually recorded on each sale
+            stats.totalSalary += (parseFloat(sale.commission) || 0) * quantity;
         }
     });
-
-    // Calculate Total Salary using bracket system
-    const bracketRate = getCommissionRateForProfit(stats.totalProfit, currentSession.id);
-    stats.totalSalary = (stats.totalProfit * bracketRate) / 100;
 
     // Calculate average sale value
     const avgSaleValue = stats.soldCount > 0 ? stats.totalSales / stats.soldCount : 0;
@@ -5592,7 +5632,6 @@ function calculateStats() {
 
     // Debug output
     console.log('📈 Final Stats:', stats);
-    console.log('💰 Commission Rate:', bracketRate + '%');
 }
 
 function renderAdminEarnings() {
@@ -6032,8 +6071,15 @@ return `
             adminUsers.forEach(user => {
                 const userSales = sales.filter(s => String(s.userId) == String(user.id) && s.sold);
 
+                // Recalculate commission per sale using profit-based brackets to keep payouts accurate
                 const totalCommission = userSales.reduce((sum, s) => {
-                    return sum + ((s.commission || 0) * s.quantity);
+                    const quantity = parseInt(s.quantity) || 1;
+                    const pricePerUnit = Number(s.price || s.sellPrice) || 0;
+                    const buyPrice = Number(s.buyPrice) || 0;
+                    const profitPerUnit = pricePerUnit - buyPrice;
+                    const commissionRate = getCommissionRateForProfit(profitPerUnit, user.id);
+                    const commissionPerUnit = profitPerUnit > 0 ? (profitPerUnit * commissionRate) / 100 : 0;
+                    return sum + (commissionPerUnit * quantity);
                 }, 0);
 
                 // Find the most recent paid payout to avoid regenerating payouts that were just settled
@@ -6297,9 +6343,13 @@ return `
 
 // =================== COMMISSION BRACKET FUNCTIONS ===================
 
+function getCommissionBracketsRef() {
+    return getRef('settings/' + OWNER_SETTINGS_KEY + '/commissionBrackets');
+}
+
 // Load commission brackets
 function loadCommissionBrackets() {
-    getRef('settings/' + currentUsername + '/commissionBrackets').on('value', (snapshot) => {
+    getCommissionBracketsRef().on('value', (snapshot) => {
         if (snapshot.exists()) {
             commissionBrackets = snapshot.val();
             // Convert object to array and sort by minProfit
@@ -6329,7 +6379,7 @@ function saveCommissionBrackets() {
     if (currentSession.role !== 'owner') return;
     
     showSyncingIndicator();
-    getRef('settings/' + currentUsername + '/commissionBrackets').set(commissionBrackets)
+    getCommissionBracketsRef().set(commissionBrackets)
         .then(() => {
             console.log('✅ Commission brackets saved');
         })
@@ -6474,7 +6524,7 @@ document.getElementById('addBracketForm').addEventListener('submit', function(e)
             if (currentSession.role !== 'owner') return;
             
             showSyncingIndicator();
-            getRef('settings/' + currentUsername + '/commissionBrackets').set(commissionBrackets)
+            getCommissionBracketsRef().set(commissionBrackets)
                 .catch((error) => {
                     showToast('❌ Error saving brackets: ' + error.message, 'error');
                 });
